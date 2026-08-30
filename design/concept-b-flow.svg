@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2400" viewBox="0 0 1800 2400">
+  <defs>
+    <style>
+      .bg { fill: #f7f3fb; }
+      .phone { fill: #fffdfd; stroke: #1c1a22; stroke-width: 6; rx: 40; ry: 40; }
+      .panel { fill: #ffffff; stroke: #1c1a22; stroke-width: 4; }
+      .accent { fill: #ffcab8; }
+      .accent2 { fill: #cde6ff; }
+      .accent3 { fill: #d8f0d7; }
+      .accent4 { fill: #efe1ff; }
+      .ink { fill: #1c1a22; font-family: Arial, sans-serif; }
+      .title { font-size: 34px; font-weight: 700; }
+      .h1 { font-size: 28px; font-weight: 700; }
+      .h2 { font-size: 20px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 13px; }
+      .muted { fill: #665f73; font-family: Arial, sans-serif; font-size: 14px; }
+      .chip { font-size: 13px; font-weight: 700; }
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1800" height="2400"/>
+  <text class="ink title" x="90" y="90">PhotoSync Android Concept B</text>
+  <text class="muted" x="90" y="120">Gallery-forward. Softer cards, larger media blocks, more lifestyle feel without losing sync status.</text>
+
+  <rect class="phone" x="90" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="120" y="235">Good afternoon</text>
+  <text class="muted" x="120" y="262">Your photos are backing up at home</text>
+  <rect class="accent" x="115" y="286" width="310" height="120" rx="24"/>
+  <text class="ink h2" x="140" y="322">Server connected</text>
+  <text class="ink body" x="140" y="350">24 uploaded today</text>
+  <text class="muted" x="140" y="376">Last success 14:32</text>
+  <rect class="panel" x="115" y="430" width="145" height="90" rx="22"/>
+  <rect class="panel" x="280" y="430" width="145" height="90" rx="22"/>
+  <rect class="panel" x="115" y="538" width="145" height="90" rx="22"/>
+  <rect class="panel" x="280" y="538" width="145" height="90" rx="22"/>
+  <text class="ink h2" x="140" y="462">Family</text>
+  <text class="muted" x="140" y="488">132 items</text>
+  <text class="ink h2" x="305" y="462">Travel</text>
+  <text class="muted" x="305" y="488">82 items</text>
+  <text class="ink h2" x="140" y="570">Work</text>
+  <text class="muted" x="140" y="596">18 waiting</text>
+  <text class="ink h2" x="305" y="570">Cleanup</text>
+  <text class="muted" x="305" y="596">Free 8.2 GB</text>
+  <rect class="accent4" x="115" y="650" width="310" height="98" rx="24"/>
+  <text class="ink h2" x="140" y="686">Suggested action</text>
+  <text class="ink body" x="140" y="716">Remove uploaded phone copies from Travel</text>
+  <rect class="panel" x="115" y="770" width="150" height="58" rx="18"/>
+  <rect class="panel" x="275" y="770" width="150" height="58" rx="18"/>
+  <text class="ink body" x="158" y="806">Sync now</text>
+  <text class="ink body" x="305" y="806">Open queue</text>
+
+  <rect class="phone" x="510" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="540" y="235">Family</text>
+  <text class="muted" x="540" y="262">248 items   41 on server only</text>
+  <rect class="panel" x="535" y="286" width="310" height="56" rx="18"/>
+  <text class="ink body" x="558" y="320">All   Photos   Videos   Server only</text>
+  <rect class="accent3" x="535" y="366" width="145" height="165" rx="24"/>
+  <rect class="accent2" x="700" y="366" width="145" height="165" rx="24"/>
+  <rect class="accent4" x="535" y="548" width="145" height="165" rx="24"/>
+  <rect class="accent" x="700" y="548" width="145" height="165" rx="24"/>
+  <text class="ink chip" x="550" y="512">ON THIS PHONE</text>
+  <text class="ink chip" x="718" y="512">UPLOADED</text>
+  <text class="ink chip" x="552" y="694">SERVER ONLY</text>
+  <text class="ink chip" x="724" y="694">FAILED</text>
+  <rect class="panel" x="535" y="734" width="145" height="56" rx="18"/>
+  <rect class="panel" x="700" y="734" width="145" height="56" rx="18"/>
+  <text class="ink body" x="570" y="769">Add media</text>
+  <text class="ink body" x="729" y="769">Select</text>
+
+  <rect class="phone" x="930" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="960" y="235">Queue</text>
+  <rect class="accent2" x="955" y="265" width="310" height="108" rx="24"/>
+  <text class="ink h2" x="980" y="302">Syncing 4 of 18</text>
+  <text class="ink body" x="980" y="330">VID_1014.mp4</text>
+  <text class="muted" x="980" y="354">Waiting for final verification</text>
+  <rect class="panel" x="955" y="394" width="310" height="74" rx="20"/>
+  <rect class="panel" x="955" y="480" width="310" height="74" rx="20"/>
+  <rect class="panel" x="955" y="566" width="310" height="74" rx="20"/>
+  <rect class="panel" x="955" y="652" width="310" height="74" rx="20"/>
+  <text class="ink body" x="980" y="425">Waiting   14 items</text>
+  <text class="ink body" x="980" y="511">Paused by rule   Wi-Fi only</text>
+  <text class="ink body" x="980" y="597">Failed   3 items need retry</text>
+  <text class="ink body" x="980" y="683">Skipped as duplicate   22</text>
+  <rect class="panel" x="955" y="748" width="145" height="58" rx="18"/>
+  <rect class="panel" x="1120" y="748" width="145" height="58" rx="18"/>
+  <text class="ink body" x="993" y="784">Retry failed</text>
+  <text class="ink body" x="1157" y="784">Resume</text>
+
+  <rect class="phone" x="1350" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="1380" y="235">Cleanup</text>
+  <text class="muted" x="1380" y="262">Only verified items can be changed</text>
+  <rect class="accent3" x="1375" y="286" width="310" height="118" rx="24"/>
+  <text class="ink h2" x="1400" y="324">You can free 8.2 GB</text>
+  <text class="muted" x="1400" y="350">420 items already safe on server</text>
+  <rect class="panel" x="1375" y="428" width="310" height="84" rx="20"/>
+  <rect class="panel" x="1375" y="528" width="310" height="84" rx="20"/>
+  <rect class="panel" x="1375" y="628" width="310" height="84" rx="20"/>
+  <text class="ink body" x="1400" y="460">Keep originals on phone</text>
+  <text class="ink body" x="1400" y="560">Remove phone copies after backup</text>
+  <text class="ink body" x="1400" y="660">Compress uploaded photos</text>
+  <rect class="accent" x="1375" y="732" width="310" height="74" rx="20"/>
+  <text class="ink body" x="1400" y="764">Preview-only items remain visible in app</text>
+  <text class="muted" x="1400" y="788">Original will no longer be stored locally</text>
+</svg>

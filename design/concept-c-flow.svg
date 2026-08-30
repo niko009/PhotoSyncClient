@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2400" viewBox="0 0 1800 2400">
+  <defs>
+    <style>
+      .bg { fill: #eef3f7; }
+      .phone { fill: #f8fbfd; stroke: #18222d; stroke-width: 6; rx: 40; ry: 40; }
+      .panel { fill: #ffffff; stroke: #18222d; stroke-width: 4; }
+      .dark { fill: #18222d; }
+      .blue { fill: #b6d3ea; }
+      .green { fill: #c9e8c8; }
+      .sand { fill: #e7dcc9; }
+      .rose { fill: #eac8c8; }
+      .ink { fill: #18222d; font-family: Arial, sans-serif; }
+      .title { font-size: 34px; font-weight: 700; }
+      .h1 { font-size: 28px; font-weight: 700; }
+      .h2 { font-size: 20px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 13px; }
+      .muted { fill: #5d6b78; font-family: Arial, sans-serif; font-size: 14px; }
+      .lightText { fill: #f8fbfd; font-family: Arial, sans-serif; }
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1800" height="2400"/>
+  <text class="ink title" x="90" y="90">PhotoSync Android Concept C</text>
+  <text class="muted" x="90" y="120">Operator dashboard. Denser layout for power users who care about queue control and diagnostics.</text>
+
+  <rect class="phone" x="90" y="180" width="360" height="720" rx="38"/>
+  <rect class="dark" x="90" y="180" width="360" height="140" rx="38"/>
+  <text class="lightText h1" x="120" y="235">PhotoSync</text>
+  <text class="lightText body" x="120" y="270">Server healthy   14:32 last success</text>
+  <text class="lightText small" x="120" y="296">18 waiting   3 failed   362 server only</text>
+  <rect class="panel" x="115" y="340" width="145" height="100" rx="18"/>
+  <rect class="panel" x="280" y="340" width="145" height="100" rx="18"/>
+  <rect class="panel" x="115" y="458" width="145" height="100" rx="18"/>
+  <rect class="panel" x="280" y="458" width="145" height="100" rx="18"/>
+  <text class="ink h2" x="135" y="372">Queue</text>
+  <text class="ink h1" x="135" y="412">18</text>
+  <text class="ink h2" x="300" y="372">Failed</text>
+  <text class="ink h1" x="300" y="412">3</text>
+  <text class="ink h2" x="135" y="490">Safe cleanup</text>
+  <text class="ink h1" x="135" y="530">8.2 GB</text>
+  <text class="ink h2" x="300" y="490">Duplicates</text>
+  <text class="ink h1" x="300" y="530">22</text>
+  <rect class="blue" x="115" y="582" width="310" height="76" rx="18"/>
+  <text class="ink body" x="140" y="614">Travel is paused by rule</text>
+  <text class="muted" x="140" y="638">Waiting for unmetered Wi-Fi</text>
+  <rect class="panel" x="115" y="682" width="310" height="58" rx="16"/>
+  <text class="ink body" x="170" y="718">Sync now   Retry failed   Queue</text>
+  <text class="muted" x="120" y="795">Folders with risk first: Work, Travel</text>
+
+  <rect class="phone" x="510" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="540" y="235">Folders</text>
+  <rect class="panel" x="535" y="270" width="310" height="84" rx="18"/>
+  <rect class="panel" x="535" y="368" width="310" height="84" rx="18"/>
+  <rect class="panel" x="535" y="466" width="310" height="84" rx="18"/>
+  <rect class="panel" x="535" y="564" width="310" height="84" rx="18"/>
+  <text class="ink h2" x="560" y="301">Family</text>
+  <text class="muted" x="560" y="328">248 items   0 failed   41 server only</text>
+  <text class="ink h2" x="560" y="399">Travel</text>
+  <text class="muted" x="560" y="426">82 items   12 waiting   paused by rule</text>
+  <text class="ink h2" x="560" y="497">Work</text>
+  <text class="muted" x="560" y="524">34 items   3 failed   needs attention</text>
+  <text class="ink h2" x="560" y="595">Archive</text>
+  <text class="muted" x="560" y="622">420 items   on server only</text>
+  <rect class="green" x="755" y="289" width="72" height="28" rx="14"/>
+  <rect class="sand" x="745" y="387" width="82" height="28" rx="14"/>
+  <rect class="rose" x="746" y="485" width="81" height="28" rx="14"/>
+  <text class="ink small" x="772" y="308">OK</text>
+  <text class="ink small" x="760" y="406">PAUSED</text>
+  <text class="ink small" x="762" y="504">FAILED</text>
+  <rect class="panel" x="535" y="684" width="145" height="58" rx="16"/>
+  <rect class="panel" x="700" y="684" width="145" height="58" rx="16"/>
+  <text class="ink body" x="570" y="720">Create folder</text>
+  <text class="ink body" x="730" y="720">Open queue</text>
+
+  <rect class="phone" x="930" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="960" y="235">Queue Diagnostics</text>
+  <rect class="panel" x="955" y="270" width="310" height="66" rx="16"/>
+  <text class="ink body" x="980" y="309">Uploading   IMG_8024.jpg   68%</text>
+  <rect class="panel" x="955" y="350" width="310" height="66" rx="16"/>
+  <text class="ink body" x="980" y="389">Waiting for server   6 items</text>
+  <rect class="panel" x="955" y="430" width="310" height="66" rx="16"/>
+  <text class="ink body" x="980" y="469">Permission lost   1 item</text>
+  <rect class="panel" x="955" y="510" width="310" height="66" rx="16"/>
+  <text class="ink body" x="980" y="549">Skipped as duplicate   22</text>
+  <rect class="panel" x="955" y="590" width="310" height="66" rx="16"/>
+  <text class="ink body" x="980" y="629">Uploaded recently   24</text>
+  <rect class="blue" x="955" y="680" width="310" height="84" rx="18"/>
+  <text class="ink body" x="980" y="714">Most common issue</text>
+  <text class="muted" x="980" y="740">Server unavailable on mobile hotspot</text>
+  <rect class="panel" x="955" y="782" width="145" height="58" rx="16"/>
+  <rect class="panel" x="1120" y="782" width="145" height="58" rx="16"/>
+  <text class="ink body" x="991" y="818">Retry failed</text>
+  <text class="ink body" x="1147" y="818">Test server</text>
+
+  <rect class="phone" x="1350" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="1380" y="235">Cleanup Planner</text>
+  <rect class="panel" x="1375" y="270" width="310" height="92" rx="18"/>
+  <text class="ink h2" x="1400" y="303">Potential free space</text>
+  <text class="ink h1" x="1400" y="340">8.2 GB</text>
+  <rect class="panel" x="1375" y="382" width="310" height="78" rx="18"/>
+  <rect class="panel" x="1375" y="474" width="310" height="78" rx="18"/>
+  <rect class="panel" x="1375" y="566" width="310" height="78" rx="18"/>
+  <text class="ink body" x="1400" y="414">Keep on phone</text>
+  <text class="ink body" x="1400" y="506">Remove uploaded phone copies</text>
+  <text class="ink body" x="1400" y="598">Compress uploaded photos</text>
+  <rect class="rose" x="1375" y="664" width="310" height="96" rx="18"/>
+  <text class="ink body" x="1400" y="698">420 items are verified</text>
+  <text class="ink body" x="1400" y="724">3 items are still not safe to clean</text>
+  <text class="muted" x="1400" y="748">Cleanup applies only to verified uploads</text>
+  <rect class="panel" x="1375" y="784" width="310" height="58" rx="16"/>
+  <text class="ink body" x="1461" y="820">Apply policy</text>
+</svg>

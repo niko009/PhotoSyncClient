@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1600" viewBox="0 0 1100 1600">
+  <defs>
+    <style>
+      .bg { fill: #f4efe7; }
+      .phone { fill: #fcf7ef; stroke: #241f1a; stroke-width: 6; rx: 38; ry: 38; }
+      .panel { fill: #fffaf3; stroke: #241f1a; stroke-width: 4; }
+      .soft { fill: #eadcca; }
+      .soft2 { fill: #d7e6dc; }
+      .soft3 { fill: #d8dde8; }
+      .danger { fill: #f1c6bf; }
+      .ink { fill: #241f1a; font-family: Arial, sans-serif; }
+      .muted { fill: #6c6258; font-family: Arial, sans-serif; font-size: 14px; }
+      .title { font-size: 30px; font-weight: 700; }
+      .h1 { font-size: 26px; font-weight: 700; }
+      .h2 { font-size: 20px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 13px; }
+      .badge { font-size: 12px; font-weight: 700; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1100" height="1600"/>
+  <text class="ink title" x="70" y="80">PhotoSync Revised Concept</text>
+  <text class="muted" x="70" y="110">Main screen with stats + folders + add folder, and folder screen with square photos and statuses.</text>
+
+  <rect class="phone" x="70" y="160" width="420" height="1180" rx="38"/>
+  <text class="ink h1" x="105" y="220">Home</text>
+  <text class="muted" x="105" y="248">Your server and folders</text>
+
+  <rect class="panel" x="95" y="275" width="370" height="112" rx="22"/>
+  <text class="ink h2" x="120" y="310">Home Server</text>
+  <text class="ink body" x="120" y="340">Connected</text>
+  <text class="muted" x="120" y="364">Last sync 14:32   Wi-Fi   Samsung S24</text>
+  <rect class="soft2" x="350" y="295" width="90" height="32" rx="16"/>
+  <text class="ink badge" x="370" y="316">ONLINE</text>
+
+  <text class="ink h2" x="105" y="430">Statistics</text>
+  <rect class="soft" x="95" y="450" width="175" height="95" rx="20"/>
+  <rect class="soft2" x="290" y="450" width="175" height="95" rx="20"/>
+  <rect class="soft3" x="95" y="560" width="175" height="95" rx="20"/>
+  <rect class="danger" x="290" y="560" width="175" height="95" rx="20"/>
+  <text class="ink body" x="120" y="485">Waiting</text>
+  <text class="ink h1" x="120" y="525">18</text>
+  <text class="ink body" x="315" y="485">Uploaded</text>
+  <text class="ink h1" x="315" y="525">1,204</text>
+  <text class="ink body" x="120" y="595">On server only</text>
+  <text class="ink h1" x="120" y="635">362</text>
+  <text class="ink body" x="315" y="595">Failed</text>
+  <text class="ink h1" x="315" y="635">3</text>
+
+  <text class="ink h2" x="105" y="710">Folders</text>
+  <rect class="panel" x="95" y="730" width="370" height="94" rx="22"/>
+  <rect class="panel" x="95" y="838" width="370" height="94" rx="22"/>
+  <rect class="panel" x="95" y="946" width="370" height="94" rx="22"/>
+  <text class="ink h2" x="120" y="768">Family</text>
+  <text class="muted" x="120" y="795">248 items   12 waiting   41 server only</text>
+  <text class="ink h2" x="120" y="876">Travel</text>
+  <text class="muted" x="120" y="903">82 items   0 failed   18 uploaded today</text>
+  <text class="ink h2" x="120" y="984">Work</text>
+  <text class="muted" x="120" y="1011">34 items   3 failed   needs attention</text>
+  <rect class="soft2" x="370" y="753" width="72" height="28" rx="14"/>
+  <rect class="soft" x="370" y="861" width="72" height="28" rx="14"/>
+  <rect class="danger" x="370" y="969" width="72" height="28" rx="14"/>
+  <text class="ink small" x="393" y="772">OPEN</text>
+  <text class="ink small" x="389" y="880">VIEW</text>
+  <text class="ink small" x="386" y="988">CHECK</text>
+
+  <rect class="panel" x="95" y="1072" width="370" height="72" rx="20"/>
+  <text class="ink h2" x="204" y="1116">Add folder</text>
+
+  <rect class="phone" x="610" y="160" width="420" height="1180" rx="38"/>
+  <text class="ink h1" x="645" y="220">Family</text>
+  <text class="muted" x="645" y="248">248 items   Square photo grid with statuses</text>
+  <rect class="panel" x="635" y="275" width="370" height="56" rx="18"/>
+  <text class="ink body" x="660" y="310">All   Waiting   Uploaded   Server only   Failed</text>
+
+  <rect class="soft" x="645" y="360" width="105" height="105" rx="18"/>
+  <rect class="soft2" x="770" y="360" width="105" height="105" rx="18"/>
+  <rect class="soft3" x="895" y="360" width="105" height="105" rx="18"/>
+  <rect class="soft2" x="645" y="485" width="105" height="105" rx="18"/>
+  <rect class="danger" x="770" y="485" width="105" height="105" rx="18"/>
+  <rect class="soft" x="895" y="485" width="105" height="105" rx="18"/>
+  <rect class="soft3" x="645" y="610" width="105" height="105" rx="18"/>
+  <rect class="soft" x="770" y="610" width="105" height="105" rx="18"/>
+  <rect class="soft2" x="895" y="610" width="105" height="105" rx="18"/>
+  <rect class="soft" x="645" y="735" width="105" height="105" rx="18"/>
+  <rect class="soft3" x="770" y="735" width="105" height="105" rx="18"/>
+  <rect class="danger" x="895" y="735" width="105" height="105" rx="18"/>
+
+  <rect class="panel" x="652" y="438" width="90" height="20" rx="10"/>
+  <text class="ink badge" x="663" y="452">ON PHONE</text>
+  <rect class="panel" x="778" y="438" width="88" height="20" rx="10"/>
+  <text class="ink badge" x="789" y="452">UPLOADED</text>
+  <rect class="panel" x="902" y="438" width="90" height="20" rx="10"/>
+  <text class="ink badge" x="908" y="452">SERVER ONLY</text>
+
+  <rect class="panel" x="652" y="563" width="90" height="20" rx="10"/>
+  <text class="ink badge" x="663" y="577">UPLOADING</text>
+  <rect class="panel" x="780" y="563" width="84" height="20" rx="10"/>
+  <text class="ink badge" x="802" y="577">FAILED</text>
+  <rect class="panel" x="906" y="563" width="82" height="20" rx="10"/>
+  <text class="ink badge" x="924" y="577">SYNCED</text>
+
+  <rect class="panel" x="648" y="868" width="172" height="58" rx="18"/>
+  <rect class="panel" x="840" y="868" width="165" height="58" rx="18"/>
+  <text class="ink body" x="694" y="904">Add media</text>
+  <text class="ink body" x="876" y="904">Bulk actions</text>
+
+  <rect class="panel" x="635" y="955" width="370" height="110" rx="22"/>
+  <text class="ink h2" x="660" y="992">Selected photo</text>
+  <text class="muted" x="660" y="1018">Stored on server: devices/Samsung_S24/Family/2026/06</text>
+  <text class="muted" x="660" y="1042">Status: On server only   Preview available</text>
+</svg>

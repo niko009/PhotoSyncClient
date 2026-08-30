@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2400" viewBox="0 0 1800 2400">
+  <defs>
+    <style>
+      .bg { fill: #f4efe7; }
+      .panel { fill: #fffaf3; stroke: #241f1a; stroke-width: 4; }
+      .phone { fill: #fcf7ef; stroke: #241f1a; stroke-width: 6; rx: 42; ry: 42; }
+      .soft { fill: #eadcca; }
+      .soft2 { fill: #d7e6dc; }
+      .soft3 { fill: #d8dde8; }
+      .danger { fill: #f1c6bf; }
+      .ink { fill: #241f1a; font-family: Arial, sans-serif; }
+      .title { font-size: 34px; font-weight: 700; }
+      .h1 { font-size: 28px; font-weight: 700; }
+      .h2 { font-size: 20px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 14px; }
+      .badge { font-size: 13px; font-weight: 700; }
+      .line { stroke: #241f1a; stroke-width: 3; }
+      .muted { fill: #6c6258; font-family: Arial, sans-serif; font-size: 14px; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1800" height="2400"/>
+  <text class="ink title" x="90" y="90">PhotoSync Android Concept A</text>
+  <text class="muted" x="90" y="120">Utility-first. Clear server state, strong cleanup guidance, restrained gallery styling.</text>
+
+  <rect class="phone" x="90" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="120" y="235">Home</text>
+  <rect class="panel" x="115" y="260" width="310" height="120" rx="20"/>
+  <text class="ink h2" x="135" y="295">Home Server</text>
+  <text class="ink body" x="135" y="325">Connected</text>
+  <text class="muted" x="135" y="350">Last sync 14:32   Wi-Fi   18 waiting</text>
+  <rect class="soft2" x="310" y="282" width="90" height="34" rx="17"/>
+  <text class="ink badge" x="330" y="304">ONLINE</text>
+  <rect class="soft" x="115" y="400" width="145" height="105" rx="20"/>
+  <rect class="soft2" x="280" y="400" width="145" height="105" rx="20"/>
+  <rect class="soft3" x="115" y="525" width="145" height="105" rx="20"/>
+  <rect class="danger" x="280" y="525" width="145" height="105" rx="20"/>
+  <text class="ink h2" x="135" y="432">Waiting</text>
+  <text class="ink h1" x="135" y="472">18</text>
+  <text class="ink h2" x="300" y="432">Uploaded</text>
+  <text class="ink h1" x="300" y="472">1,204</text>
+  <text class="ink h2" x="135" y="557">Server only</text>
+  <text class="ink h1" x="135" y="597">362</text>
+  <text class="ink h2" x="300" y="557">Failed</text>
+  <text class="ink h1" x="300" y="597">3</text>
+  <rect class="panel" x="115" y="655" width="310" height="72" rx="18"/>
+  <text class="ink h2" x="140" y="700">Sync now</text>
+  <rect class="panel" x="115" y="742" width="150" height="58" rx="18"/>
+  <rect class="panel" x="275" y="742" width="150" height="58" rx="18"/>
+  <text class="ink body" x="155" y="778">Retry failed</text>
+  <text class="ink body" x="315" y="778">Open queue</text>
+  <text class="muted" x="120" y="845">Folders: Family, Work, Travel</text>
+
+  <rect class="phone" x="510" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="540" y="235">Folder Detail</text>
+  <text class="muted" x="540" y="262">Family   248 items   12 waiting</text>
+  <rect class="panel" x="535" y="280" width="310" height="58" rx="16"/>
+  <text class="ink body" x="560" y="316">All   Waiting   Uploaded   Server only</text>
+  <rect class="soft" x="535" y="360" width="92" height="110" rx="18"/>
+  <rect class="soft2" x="644" y="360" width="92" height="110" rx="18"/>
+  <rect class="soft3" x="753" y="360" width="92" height="110" rx="18"/>
+  <rect class="soft2" x="535" y="486" width="92" height="110" rx="18"/>
+  <rect class="danger" x="644" y="486" width="92" height="110" rx="18"/>
+  <rect class="soft" x="753" y="486" width="92" height="110" rx="18"/>
+  <rect class="soft3" x="535" y="612" width="92" height="110" rx="18"/>
+  <rect class="soft" x="644" y="612" width="92" height="110" rx="18"/>
+  <rect class="soft2" x="753" y="612" width="92" height="110" rx="18"/>
+  <rect class="panel" x="545" y="436" width="72" height="24" rx="12"/>
+  <text class="ink badge" x="553" y="453">ON PHONE</text>
+  <rect class="panel" x="654" y="562" width="72" height="24" rx="12"/>
+  <text class="ink badge" x="660" y="579">FAILED</text>
+  <rect class="panel" x="763" y="688" width="72" height="24" rx="12"/>
+  <text class="ink badge" x="766" y="705">SERVER</text>
+  <rect class="panel" x="535" y="748" width="145" height="56" rx="16"/>
+  <rect class="panel" x="700" y="748" width="145" height="56" rx="16"/>
+  <text class="ink body" x="570" y="783">Add media</text>
+  <text class="ink body" x="733" y="783">Bulk actions</text>
+
+  <rect class="phone" x="930" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="960" y="235">Sync Queue</text>
+  <rect class="soft2" x="955" y="260" width="310" height="84" rx="18"/>
+  <text class="ink h2" x="980" y="294">Uploading now</text>
+  <text class="ink body" x="980" y="322">IMG_8024.jpg   68%</text>
+  <line class="line" x1="980" y1="334" x2="1210" y2="334"/>
+  <line class="line" x1="980" y1="334" x2="1134" y2="334" stroke="#3f7f5f"/>
+  <rect class="panel" x="955" y="362" width="310" height="74" rx="18"/>
+  <rect class="panel" x="955" y="448" width="310" height="74" rx="18"/>
+  <rect class="panel" x="955" y="534" width="310" height="74" rx="18"/>
+  <rect class="panel" x="955" y="620" width="310" height="74" rx="18"/>
+  <text class="ink body" x="980" y="392">Waiting   17 files</text>
+  <text class="muted" x="980" y="416">Family, Travel, Work</text>
+  <text class="ink body" x="980" y="478">Paused by rule</text>
+  <text class="muted" x="980" y="502">Waiting for Wi-Fi</text>
+  <text class="ink body" x="980" y="564">Needs attention</text>
+  <text class="muted" x="980" y="588">3 failed   tap to retry</text>
+  <text class="ink body" x="980" y="650">Uploaded recently</text>
+  <text class="muted" x="980" y="674">24 items in last session</text>
+  <rect class="panel" x="955" y="724" width="145" height="58" rx="16"/>
+  <rect class="panel" x="1120" y="724" width="145" height="58" rx="16"/>
+  <text class="ink body" x="992" y="760">Retry failed</text>
+  <text class="ink body" x="1160" y="760">Pause all</text>
+
+  <rect class="phone" x="1350" y="180" width="360" height="720" rx="38"/>
+  <text class="ink h1" x="1380" y="235">Cleanup</text>
+  <rect class="danger" x="1375" y="260" width="310" height="98" rx="18"/>
+  <text class="ink h2" x="1400" y="294">Safe to free</text>
+  <text class="ink h1" x="1400" y="336">8.2 GB</text>
+  <text class="muted" x="1505" y="336">420 uploaded items</text>
+  <rect class="panel" x="1375" y="378" width="310" height="88" rx="18"/>
+  <text class="ink body" x="1400" y="412">Keep on phone</text>
+  <text class="muted" x="1400" y="438">Original remains local after backup</text>
+  <rect class="panel" x="1375" y="482" width="310" height="88" rx="18"/>
+  <text class="ink body" x="1400" y="516">Remove from phone after backup</text>
+  <text class="muted" x="1400" y="542">Leaves preview and server copy</text>
+  <rect class="panel" x="1375" y="586" width="310" height="88" rx="18"/>
+  <text class="ink body" x="1400" y="620">Compress photos after backup</text>
+  <text class="muted" x="1400" y="646">Only for uploaded photos</text>
+  <rect class="panel" x="1375" y="694" width="310" height="74" rx="18"/>
+  <text class="ink body" x="1400" y="726">123 items backed up, 3 still pending</text>
+  <text class="muted" x="1400" y="748">Only verified items can be cleaned</text>
+  <rect class="panel" x="1375" y="786" width="310" height="58" rx="16"/>
+  <text class="ink body" x="1460" y="822">Apply cleanup</text>
+</svg>

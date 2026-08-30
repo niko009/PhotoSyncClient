@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/server/">
+    <Project Path="server/PhotoSync.Server/PhotoSync.Server.csproj" />
+  </Folder>
+</Solution>
