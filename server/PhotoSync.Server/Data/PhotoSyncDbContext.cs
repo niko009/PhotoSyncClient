@@ -1,10 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using PhotoSync.Server.Models;
+using PhotoSync.Server.Security;
 
 namespace PhotoSync.Server.Data;
 
-public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> options) : DbContext(options)
+public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> options, IHttpContextAccessor? accessor = null) : DbContext(options)
 {
+    // Internal maintenance scopes have no HTTP context. Every HTTP request is scoped.
+    private bool IsHttpRequest => accessor?.HttpContext is not null;
+    private int CallerDeviceId => int.TryParse(accessor?.HttpContext?.User.FindFirst(DeviceAuthentication.DeviceClaim)?.Value, out var id) ? id : -1;
+    public DbSet<DeviceCredential> DeviceCredentials => Set<DeviceCredential>();
     public DbSet<DeviceEntity> Devices => Set<DeviceEntity>();
 
     public DbSet<AlbumEntity> Albums => Set<AlbumEntity>();
@@ -13,8 +18,16 @@ public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> opti
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<DeviceCredential>(entity =>
+        {
+            entity.ToTable("device_credentials");
+            entity.HasKey(x => x.DeviceId);
+            entity.Property(x => x.SecretHash).HasMaxLength(64).IsRequired();
+            entity.HasOne<DeviceEntity>().WithOne().HasForeignKey<DeviceCredential>(x => x.DeviceId);
+        });
         modelBuilder.Entity<DeviceEntity>(entity =>
         {
+            entity.HasQueryFilter(x => !IsHttpRequest || x.Id == CallerDeviceId);
             entity.ToTable("devices");
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.DeviceUuid).IsUnique();
@@ -25,6 +38,7 @@ public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> opti
 
         modelBuilder.Entity<AlbumEntity>(entity =>
         {
+            entity.HasQueryFilter(x => !IsHttpRequest || x.DeviceId == CallerDeviceId);
             entity.ToTable("albums");
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.DeviceId, x.AlbumName }).IsUnique();
@@ -38,9 +52,10 @@ public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> opti
 
         modelBuilder.Entity<StoredFileEntity>(entity =>
         {
+            entity.HasQueryFilter(x => !IsHttpRequest || x.DeviceId == CallerDeviceId);
             entity.ToTable("files");
             entity.HasKey(x => x.Id);
-            entity.HasIndex(x => x.Sha256).IsUnique();
+            entity.HasIndex(x => new { x.DeviceId, x.AlbumId, x.Sha256 }).IsUnique();
             entity.Property(x => x.OriginalName).HasMaxLength(260).IsRequired();
             entity.Property(x => x.StoredName).HasMaxLength(260).IsRequired();
             entity.Property(x => x.MimeType).HasMaxLength(100).IsRequired();

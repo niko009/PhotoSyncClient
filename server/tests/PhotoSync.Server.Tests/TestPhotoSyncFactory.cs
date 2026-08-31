@@ -7,9 +7,11 @@ namespace PhotoSync.Server.Tests;
 public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyncDisposable
 {
     private readonly string _rootPath;
+    private readonly IReadOnlyDictionary<string, string?> _settings;
 
-    public TestPhotoSyncFactory()
+    public TestPhotoSyncFactory(IReadOnlyDictionary<string, string?>? settings = null)
     {
+        _settings = settings ?? new Dictionary<string, string?>();
         _rootPath = Path.Combine(Path.GetTempPath(), "photosync-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_rootPath);
     }
@@ -27,7 +29,7 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
         {
             var settings = new Dictionary<string, string?>
             {
-                ["ConnectionStrings:PhotoSync"] = $"Data Source={DatabasePath}",
+                ["ConnectionStrings:PhotoSync"] = $"Data Source={DatabasePath};Pooling=False",
                 ["PhotoSync:StorageRoot"] = StoragePath,
                 ["PhotoSync:TempRoot"] = Path.Combine(StoragePath, "_temp"),
                 ["PhotoSync:PreviewRoot"] = Path.Combine(StoragePath, "_previews"),
@@ -35,6 +37,7 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
                 ["PhotoSync:ServerName"] = "Test PhotoSync"
             };
 
+            foreach (var entry in _settings) settings[entry.Key] = entry.Value;
             configBuilder.AddInMemoryCollection(settings);
         });
     }

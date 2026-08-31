@@ -12,6 +12,16 @@ updated: 2026-06-04
 
 # PhotoSync API Contract
 
+> Historical payload contract. Since 0.2.0-beta, all data requests require
+> device authentication; the [device access protocol](device-access.md) supersedes
+> the no-auth assumptions below. Google accounts and
+> [family sharing](family-sharing.md) remain planned, not implemented.
+
+> The new [web portal](web-portal.md) uses a separate Identity cookie and role
+> policies. `/api/admin/dashboard` no longer accepts device tokens. Native
+> `/api/devices`, `/api/albums`, `/api/files` remain device-scoped and do not accept
+> browser cookies. Public server capabilities remain protocol 2.
+
 ## Scope
 
 This note defines the initial HTTP contract between:
@@ -22,7 +32,7 @@ This note defines the initial HTTP contract between:
 This contract targets MVP:
 
 - LAN usage
-- no authentication
+- automatic device authentication (since 0.2.0-beta)
 - one-way sync `Android -> Server`
 - file permanence on server
 

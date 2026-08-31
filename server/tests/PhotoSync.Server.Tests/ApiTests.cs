@@ -26,7 +26,7 @@ public sealed class ApiTests
         Assert.NotNull(payload);
         Assert.Equal("Test PhotoSync", payload.ServerName);
         Assert.Equal("ok", payload.Status);
-        Assert.Equal(factory.StoragePath, payload.StorageRoot);
+        Assert.Equal("", payload.StorageRoot);
     }
 
     [Fact]
@@ -173,6 +173,9 @@ public sealed class ApiTests
 
     private static async Task<int> RegisterDeviceAsync(HttpClient client, Guid deviceUuid, string deviceName)
     {
+        client.DefaultRequestHeaders.Remove("X-PhotoSync-Device");
+        client.DefaultRequestHeaders.Add("X-PhotoSync-Device", deviceUuid.ToString());
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Convert.ToHexString(RandomNumberGenerator.GetBytes(32)));
         var response = await client.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(deviceUuid, deviceName, "0.1.0"));
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<RegisterDeviceResponse>();

@@ -1,0 +1,45 @@
+# Single-instance beta at photosync.bacus.dev. Portal credentials are provisioned privately.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ASPNETCORE_ENVIRONMENT: Production
+      PhotoSync__ServerName: Bacus Lab PhotoSync
+      PhotoSync__StorageRoot: /data
+      PhotoSync__DatabasePath: /data/system/photosync.db
+      ConnectionStrings__PhotoSync: Data Source=/data/system/photosync.db
+      PhotoSync__MaxDevices: "5"
+      PhotoSync__MaxStorageBytes: "10737418240"
+      PhotoSync__MaxFileBytes: "26214400"
+    # Provision privately on Ubuntu; never commit this file or its contents.
+    env_file:
+      - path: /srv/bacus/apps/photosync/portal.env
+        required: false
+    volumes:
+      - photosync-data:/data
+    # Only the Bacus reverse proxy should reach this port; no host port binding.
+    expose:
+      - "8080"
+    networks:
+      bacus-net:
+        aliases:
+          - bacus-photosync
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  photosync-data:
+    name: bacus-photosync-data
+
+networks:
+  bacus-net:
+    external: true

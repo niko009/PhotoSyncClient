@@ -5,6 +5,7 @@ using PhotoSync.Server.Contracts;
 using PhotoSync.Server.Data;
 using PhotoSync.Server.Models;
 using PhotoSync.Server.Services;
+using PhotoSync.Server.Security;
 
 namespace PhotoSync.Server.Endpoints;
 
@@ -15,6 +16,8 @@ public static class DeviceEndpoints
         var group = endpoints.MapGroup("/api/devices");
 
         group.MapPost("/register", RegisterAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting("portal-login")
             .Produces<RegisterDeviceResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
@@ -24,20 +27,29 @@ public static class DeviceEndpoints
         return group;
     }
 
-    private static async Task<Results<Ok<RegisterDeviceResponse>, BadRequest<ProblemDetails>>> RegisterAsync(
+    private static async Task<IResult> RegisterAsync(
         RegisterDeviceRequest request,
+        HttpRequest httpRequest,
         PhotoSyncDbContext dbContext,
+        Microsoft.Extensions.Options.IOptions<PhotoSync.Server.Options.PhotoSyncOptions> options,
         CancellationToken cancellationToken)
     {
-        if (request.DeviceUuid == Guid.Empty || string.IsNullOrWhiteSpace(request.DeviceName) || string.IsNullOrWhiteSpace(request.AppVersion))
+        if (request.DeviceUuid == Guid.Empty || string.IsNullOrWhiteSpace(request.DeviceName) || request.DeviceName.Length > 200 || string.IsNullOrWhiteSpace(request.AppVersion) || request.AppVersion.Length > 50)
         {
             return TypedResults.BadRequest(ApiProblems.Validation("INVALID_DEVICE", "device_uuid, device_name and app_version are required."));
         }
 
+        var secret = DeviceAuthentication.ReadSecret(httpRequest);
+        if (secret is null || !Guid.TryParse(httpRequest.Headers["X-PhotoSync-Device"], out var headerUuid) || headerUuid != request.DeviceUuid)
+            return Results.Unauthorized();
+
         var now = DateTimeOffset.UtcNow;
-        var device = await dbContext.Devices.SingleOrDefaultAsync(x => x.DeviceUuid == request.DeviceUuid, cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var device = await dbContext.Devices.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.DeviceUuid == request.DeviceUuid, cancellationToken);
         if (device is null)
         {
+            if (!options.Value.AllowDeviceRegistration || await dbContext.Devices.IgnoreQueryFilters().CountAsync(cancellationToken) >= options.Value.MaxDevices)
+                return Results.Problem(statusCode: 403, title: "DEVICE_ENROLLMENT_CLOSED", detail: "New device registration is closed or the device limit was reached.");
             device = new DeviceEntity
             {
                 DeviceUuid = request.DeviceUuid,
@@ -48,15 +60,22 @@ public static class DeviceEndpoints
             };
 
             dbContext.Devices.Add(device);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            dbContext.DeviceCredentials.Add(new DeviceCredential { DeviceId = device.Id, SecretHash = DeviceAuthentication.Hash(secret) });
         }
         else
         {
+            var credential = await dbContext.DeviceCredentials.SingleOrDefaultAsync(x => x.DeviceId == device.Id, cancellationToken);
+            // Never let the first caller claim an old, unprotected device UUID.
+            if (credential is null || !DeviceAuthentication.Matches(secret, credential.SecretHash))
+                return Results.Unauthorized();
             device.DeviceName = request.DeviceName.Trim();
             device.AppVersion = request.AppVersion.Trim();
             device.LastSeenAtUtc = now;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return TypedResults.Ok(new RegisterDeviceResponse(device.Id, true, device.LastSeenAtUtc));
     }
 

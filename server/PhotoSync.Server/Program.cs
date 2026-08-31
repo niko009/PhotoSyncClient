@@ -6,33 +6,50 @@ using PhotoSync.Server.Data;
 using PhotoSync.Server.Endpoints;
 using PhotoSync.Server.Options;
 using PhotoSync.Server.Services;
+using PhotoSync.Server.Portal;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddPortal();
+builder.Services.AddAuthentication(PhotoSync.Server.Security.DeviceAuthentication.SchemeName)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, PhotoSync.Server.Security.DeviceAuthentication>(
+        PhotoSync.Server.Security.DeviceAuthentication.SchemeName, _ => { });
+builder.Services.AddAuthorization(options => options.FallbackPolicy =
+    new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
 builder.Services.AddProblemDetails();
 builder.Services
     .AddOptions<PhotoSyncOptions>()
     .Bind(builder.Configuration.GetSection(PhotoSyncOptions.SectionName))
-    .Validate(options => !string.IsNullOrWhiteSpace(options.StorageRoot), "PhotoSync:StorageRoot is required.");
+    .Validate(options => !string.IsNullOrWhiteSpace(options.StorageRoot), "PhotoSync:StorageRoot is required.")
+    .Validate(options => options.MaxDevices > 0 && options.MaxFileBytes > 0 && options.MaxStorageBytes > 0 && options.MinFreeDiskBytes >= 0, "PhotoSync capacity limits must be positive.");
 
-var connectionString = builder.Configuration.GetConnectionString("PhotoSync")
-    ?? "Data Source=photosync.db";
-
-var sqliteBuilder = new SqliteConnectionStringBuilder(connectionString);
-if (!string.IsNullOrWhiteSpace(sqliteBuilder.DataSource))
+builder.Services.AddDbContext<PhotoSyncDbContext>((services, options) =>
 {
-    var databaseDirectory = Path.GetDirectoryName(sqliteBuilder.DataSource);
-    if (!string.IsNullOrWhiteSpace(databaseDirectory))
+    // Resolve at scope creation so test-host and deployment overrides are honored.
+    var connectionString = services.GetRequiredService<IConfiguration>().GetConnectionString("PhotoSync")
+        ?? "Data Source=photosync.db";
+    var sqlite = new SqliteConnectionStringBuilder(connectionString);
+    if (!string.IsNullOrWhiteSpace(sqlite.DataSource))
     {
-        Directory.CreateDirectory(databaseDirectory);
+        var directory = Path.GetDirectoryName(sqlite.DataSource);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
     }
-}
-
-builder.Services.AddDbContext<PhotoSyncDbContext>(options => options.UseSqlite(connectionString));
+    options.UseSqlite(connectionString);
+});
 builder.Services.AddSingleton<StoragePathResolver>();
 builder.Services.AddScoped<FileStorageService>();
+builder.Services.AddSingleton<UploadGuard>();
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    foreach (var address in builder.Configuration.GetSection("Portal:TrustedProxyAddresses").Get<string[]>() ?? [])
+        options.KnownProxies.Add(System.Net.IPAddress.Parse(address));
+});
 
 var app = builder.Build();
+app.UseForwardedHeaders();
 
 app.UseExceptionHandler(exceptionApp =>
 {
@@ -54,10 +71,28 @@ app.UseExceptionHandler(exceptionApp =>
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>();
-    await dbContext.Database.EnsureCreatedAsync();
+    await DeviceSecuritySchema.InitializeAsync(dbContext);
+    Directory.CreateDirectory(scope.ServiceProvider.GetRequiredService<StoragePathResolver>().StorageRoot);
 }
 
+app.UseAuthentication();
+await app.Services.InitializePortalAsync();
+app.UseStaticFiles();
+app.UseAuthorization();
+app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'";
+    await next(context);
+});
+
 app.MapServerEndpoints();
+app.MapPortal();
+app.MapGet("/health", async (PhotoSyncDbContext db) =>
+    await db.Database.CanConnectAsync() ? Results.Ok(new { status = "ok", service = "photosync", protocol_version = 2 }) : Results.StatusCode(503)).AllowAnonymous();
 app.MapAdminEndpoints();
 app.MapDeviceEndpoints();
 app.MapAlbumEndpoints();

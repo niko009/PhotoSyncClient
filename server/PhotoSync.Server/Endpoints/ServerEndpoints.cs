@@ -18,12 +18,20 @@ public static class ServerEndpoints
             var response = new ServerInfoResponse(
                 options.Value.ServerName,
                 version,
-                pathResolver.StorageRoot,
+                "",
                 "ok",
                 new ServerFeatures(false, false, false));
 
             return TypedResults.Ok(response);
-        });
+        }).AllowAnonymous();
+
+        group.MapGet("/capabilities", () => TypedResults.Ok(new
+        {
+            device_auth = true,
+            google_auth = false,
+            family_sharing = false,
+            protocol_version = 2
+        })).AllowAnonymous();
 
         return group;
     }

@@ -33,7 +33,13 @@ public sealed class StoragePathResolver(IOptions<PhotoSyncOptions> options)
     }
 
     public string ToAbsolutePath(string relativePath)
-        => Path.Combine(_storageRoot, relativePath);
+    {
+        var fullPath = Path.GetFullPath(Path.Combine(_storageRoot, relativePath));
+        var rootPrefix = _storageRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(rootPrefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new InvalidOperationException("Storage path is outside the configured root.");
+        return fullPath;
+    }
 
     public static string MakeSafeFolderName(string value)
     {
@@ -45,22 +51,33 @@ public sealed class StoragePathResolver(IOptions<PhotoSyncOptions> options)
         var builder = new StringBuilder(value.Length);
         foreach (var ch in value.Trim())
         {
-            builder.Append(Path.GetInvalidFileNameChars().Contains(ch) || char.IsControl(ch) ? '_' : ch);
+            builder.Append(IsUnsafe(ch) ? '_' : ch);
         }
 
-        var collapsed = builder.ToString().Replace(' ', '_');
-        return string.IsNullOrWhiteSpace(collapsed) ? "unknown" : collapsed;
+        var collapsed = builder.ToString().Trim('.', ' ').Replace(' ', '_');
+        if (string.IsNullOrWhiteSpace(collapsed)) return "unknown";
+        return AvoidReservedName(collapsed.Length > 100 ? collapsed[..100] : collapsed);
     }
 
     public static string MakeDeviceFolderName(string deviceName, Guid deviceUuid)
-        => $"{MakeSafeFolderName(deviceName)}_{deviceUuid.ToString("N")[..8]}";
+        => $"{MakeSafeFolderName(deviceName)}_{deviceUuid:N}";
 
     public static string MakeSafeFileName(string value)
     {
-        var fileName = Path.GetFileName(string.IsNullOrWhiteSpace(value) ? "file.bin" : value);
+        var fileName = Path.GetFileName(string.IsNullOrWhiteSpace(value) ? "file.bin" : value.Replace('\\', '/'));
         var safe = new string(fileName.Select(ch =>
-            Path.GetInvalidFileNameChars().Contains(ch) || char.IsControl(ch) ? '_' : ch).ToArray());
+            IsUnsafe(ch) ? '_' : ch).ToArray()).Trim('.', ' ');
 
-        return string.IsNullOrWhiteSpace(safe) ? "file.bin" : safe;
+        return string.IsNullOrWhiteSpace(safe) ? "file.bin" : AvoidReservedName(safe);
+    }
+
+    private static bool IsUnsafe(char ch) => char.IsControl(ch) || "<>:\"/\\|?*".Contains(ch);
+
+    private static string AvoidReservedName(string value)
+    {
+        var stem = value.Split('.')[0].ToUpperInvariant();
+        return stem is "CON" or "PRN" or "AUX" or "NUL"
+            || (stem.Length == 4 && (stem.StartsWith("COM") || stem.StartsWith("LPT")) && stem[3] is >= '1' and <= '9')
+            ? "_" + value : value;
     }
 }

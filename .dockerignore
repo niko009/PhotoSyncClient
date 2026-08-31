@@ -1,0 +1,13 @@
+# Allow only the server source into the build context, never local media or keys.
+**
+!Dockerfile
+!server/
+!server/PhotoSync.Server/
+!server/PhotoSync.Server/**/
+!server/PhotoSync.Server/**/*.cs
+!server/PhotoSync.Server/PhotoSync.Server.csproj
+!server/PhotoSync.Server/appsettings.json
+!server/PhotoSync.Server/wwwroot/
+!server/PhotoSync.Server/wwwroot/**
+server/PhotoSync.Server/**/bin/
+server/PhotoSync.Server/**/obj/

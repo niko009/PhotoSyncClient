@@ -44,7 +44,9 @@ public static class FileEndpoints
     {
         var normalizedHash = request.Sha256.Trim().ToLowerInvariant();
         var existing = await dbContext.Files.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Sha256 == normalizedHash, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Sha256 == normalizedHash
+                && x.Device.DeviceUuid == request.DeviceUuid
+                && x.Album.AlbumName == request.AlbumName.Trim(), cancellationToken);
 
         return existing is null
             ? TypedResults.Ok(new FileCheckResponse(false))

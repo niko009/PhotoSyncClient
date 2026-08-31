@@ -2,23 +2,38 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using PhotoSync.Server.Data;
 using PhotoSync.Server.Models;
+using Microsoft.Extensions.Options;
+using PhotoSync.Server.Options;
 
 namespace PhotoSync.Server.Services;
 
-public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePathResolver pathResolver, ILogger<FileStorageService> logger)
+public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePathResolver pathResolver, ILogger<FileStorageService> logger, UploadGuard guard, IOptions<PhotoSyncOptions> options)
 {
     public async Task<StoreFileResult> StoreAsync(StoreFileCommand command, CancellationToken cancellationToken)
+    {
+        if (command.SizeBytes > options.Value.MaxFileBytes) return StoreFileResult.Invalid("File exceeds configured size limit.");
+        await guard.Gate.WaitAsync(cancellationToken);
+        try { return await StoreWithinLimitAsync(command, cancellationToken); }
+        finally { guard.Gate.Release(); }
+    }
+
+    private async Task<StoreFileResult> StoreWithinLimitAsync(StoreFileCommand command, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(pathResolver.StorageRoot);
         Directory.CreateDirectory(pathResolver.TempRoot);
 
         var duplicate = await dbContext.Files
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Sha256 == command.Sha256, cancellationToken);
+            .SingleOrDefaultAsync(x => x.DeviceId == command.Device.Id && x.AlbumId == command.Album.Id && x.Sha256 == command.Sha256, cancellationToken);
         if (duplicate is not null)
         {
             return StoreFileResult.FromExisting(duplicate);
         }
+
+        var used = await dbContext.Files.IgnoreQueryFilters().SumAsync(x => (long?)x.SizeBytes, cancellationToken) ?? 0;
+        var free = UploadGuard.FreeBytes(pathResolver.StorageRoot);
+        if (command.SizeBytes > options.Value.MaxStorageBytes - used || free is null || free.Value - command.SizeBytes < options.Value.MinFreeDiskBytes)
+            return StoreFileResult.Invalid("Storage capacity limit reached.");
 
         var tempFilePath = Path.Combine(pathResolver.TempRoot, $"{Guid.NewGuid():N}.upload");
         try
@@ -39,6 +54,8 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
                         break;
                     }
 
+                    if (totalBytes + read > command.SizeBytes || totalBytes + read > options.Value.MaxFileBytes)
+                        return StoreFileResult.Invalid("Upload exceeds declared size or configured file limit.");
                     await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                     sha256.TransformBlock(buffer, 0, read, null, 0);
                     totalBytes += read;
