@@ -44,6 +44,23 @@ public sealed class PortalTests
     }
 
     [Fact]
+    public async Task InitialSetupStatus_DoesNotOfferLoginUntilAccountAndHttpsAreReady()
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        using var secure = Client(factory);
+        var initial = await secure.GetFromJsonAsync<JsonElement>("/api/portal/status");
+        Assert.False(initial.GetProperty("loginAvailable").GetBoolean());
+        await User(factory, "owner", "SuperAdmin");
+        var ready = await secure.GetFromJsonAsync<JsonElement>("/api/portal/status");
+        Assert.True(ready.GetProperty("loginAvailable").GetBoolean());
+        using var plain = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        var untrusted = await plain.GetFromJsonAsync<JsonElement>("/api/portal/status");
+        Assert.False(untrusted.GetProperty("loginAvailable").GetBoolean());
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await plain.GetAsync("/api/portal/csrf")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await plain.GetAsync("/api/portal/admin/dashboard")).StatusCode);
+    }
+
+    [Fact]
     public async Task AnonymousAndDeviceCannotReadPortal_AndLoginRequiresCsrf()
     {
         await using var factory = new TestPhotoSyncFactory();

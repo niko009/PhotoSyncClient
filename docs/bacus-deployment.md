@@ -1,6 +1,6 @@
 # Bacus Lab deployment preparation
 
-Status: deployment authorized on 2026-08-31; registration is being prepared.
+Status: registered and deployed through Bacus Agent on 2026-08-31.
 Confirmed address: `https://photosync.bacus.dev`.
 
 The latest user request permits initial storage in a local Ubuntu directory/volume.
@@ -10,7 +10,7 @@ See [web portal and operator setup](web-portal.md) for Identity roles, bootstrap
 secrets, trusted proxy configuration, tested scope and remaining deployment gates.
 
 Local checks: Compose configuration validation and server tests passed.
-The image has not been built or run: the local Docker daemon is unavailable.
+The image was built and started on Ubuntu by Bacus Agent; local Docker is unavailable.
 The native SQLite dependency is now pinned to 2.1.13; the current NuGet audit
 reports no known vulnerable dependencies.
 
@@ -47,7 +47,7 @@ project, local databases, media, build outputs and development configuration.
 It publishes no host ports. Network membership is not authentication: other
 containers on that network can reach the API.
 
-The current, not-yet-deployed Compose configuration places both original media
+The deployed Compose configuration places both original media
 and SQLite in the named volume `bacus-photosync-data`:
 
 - `/data/system/photosync.db`: metadata database (including its WAL/SHM files).
@@ -89,3 +89,19 @@ After the security gate is resolved and container testing passes:
 
 Do not trigger registration merely to test connectivity: it creates a public
 route. The public product page and APK remain separate from this server URL.
+
+## Live verification — 2026-08-31
+
+- Source release: `373c3da`; website manifest: `eff62e7`; registration command: `5930135`.
+- Public DNS created; HTTPS `/health` returned 200 with protocol 2.
+- Capabilities confirm device authentication, no Google/family support yet.
+- A synthetic 68-byte PNG was uploaded and downloaded with matching SHA-256.
+- Anonymous and incorrect-secret API requests returned 401.
+- Probe device ID 1, file ID 1; this uses one of five device slots. No personal photos were used.
+- Root redirects to `/portal/`; HTML, stylesheet and script are public, private APIs remain protected.
+- Portal account/proxy provisioning is NOT complete: no default owner was created.
+  Startup UI reports the pending setup instead of offering a nonfunctional login.
+  Configure the private `portal.env` as described in web-portal.md.
+- Local browser's network proxy initially could not resolve the new host. API tests
+  used its public DNS address with the original hostname/SNI and TLS validation intact.
+- Persistence across the following deployment and full authenticated browser UI remain to be verified.

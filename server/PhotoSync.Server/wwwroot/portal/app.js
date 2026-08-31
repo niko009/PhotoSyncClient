@@ -50,4 +50,10 @@ submit('password-form',async data=>{await api('/password',data);$('password-form
 $('logout').addEventListener('click',async()=>{try{await api('/logout',{});csrf='';me=null;adminMode=false;$('user-view').hidden=false;$('admin-view').hidden=true;$('user-tab').setAttribute('aria-pressed','true');$('admin-tab').setAttribute('aria-pressed','false');await session();}catch(error){message(error.message);}});
 for(const [id,isAdmin] of [['user-tab',false],['admin-tab',true]])$(id).addEventListener('click',async()=>{adminMode=isAdmin;$('user-view').hidden=isAdmin;$('admin-view').hidden=!isAdmin;$('user-tab').setAttribute('aria-pressed',String(!isAdmin));$('admin-tab').setAttribute('aria-pressed',String(isAdmin));try{await refresh();}catch(error){message(error.message);}});
 $('refresh').addEventListener('click',()=>refresh().catch(error=>message(error.message)));
-session().catch(error=>message(error.message));
+async function start() {
+  const status = await api('/status');
+  $('setup-notice').hidden = status.loginAvailable;
+  $('login-form').hidden = !status.loginAvailable;
+  if (status.loginAvailable) await session();
+}
+start().catch(error=>message(error.message));

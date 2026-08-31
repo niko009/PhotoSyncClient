@@ -16,8 +16,12 @@ public static class PortalEndpoints
     {
         app.MapGet("/", () => Results.Redirect("/portal/")).AllowAnonymous();
         app.MapGet("/portal/", (IWebHostEnvironment env) => Results.File(Path.Combine(env.WebRootPath, "portal", "index.html"), "text/html")).AllowAnonymous();
+        app.MapGet("/api/portal/status", async (HttpContext context, PortalDbContext db) =>
+            Results.Ok(new { loginAvailable = context.Request.IsHttps && await db.Users.AnyAsync() })).AllowAnonymous();
         app.MapGet("/api/portal/csrf", async (HttpContext context, IAntiforgery csrf) =>
         {
+            if (!context.Request.IsHttps)
+                return Results.Json(new { error = "portal_setup_required" }, statusCode: StatusCodes.Status503ServiceUnavailable);
             var session = await context.AuthenticateAsync(PortalSetup.Scheme);
             context.User = session.Principal ?? new ClaimsPrincipal(new ClaimsIdentity());
             return Results.Ok(new { token = csrf.GetAndStoreTokens(context).RequestToken });
