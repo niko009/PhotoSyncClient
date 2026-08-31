@@ -104,4 +104,11 @@ route. The public product page and APK remain separate from this server URL.
   Configure the private `portal.env` as described in web-portal.md.
 - Local browser's network proxy initially could not resolve the new host. API tests
   used its public DNS address with the original hostname/SNI and TLS validation intact.
-- Persistence across the following deployment and full authenticated browser UI remain to be verified.
+- Persistence verified after deployment `72a37ea`: the same device credential
+  still authenticates and the downloaded file has the same SHA-256. Both the
+  catalog and original survived container replacement.
+- Updated portal HTML/CSS/JS return 200; `/api/portal/status` reports
+  `loginAvailable: false` until operator setup. 29 local tests pass.
+- Full authenticated browser UI and backup/restore remain unverified. Public DNS
+  resolvers 1.1.1.1 and 8.8.8.8 both resolve the host; local negative DNS caching
+  can temporarily prevent opening the new hostname.
