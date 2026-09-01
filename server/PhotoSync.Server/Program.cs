@@ -102,6 +102,7 @@ app.Use(async (context, next) =>
 
 app.MapServerEndpoints();
 app.MapGoogleAuthEndpoints();
+app.MapFamilyEndpoints();
 app.MapPortal();
 app.MapGet("/health", async (PhotoSyncDbContext db) =>
     await db.Database.CanConnectAsync() ? Results.Ok(new { status = "ok", service = "photosync", protocol_version = 2 }) : Results.StatusCode(503)).AllowAnonymous();
