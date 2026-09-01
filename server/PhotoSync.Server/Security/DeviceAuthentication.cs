@@ -22,6 +22,7 @@ public sealed class DeviceAuthentication(
 {
     public const string SchemeName = "Device";
     public const string DeviceClaim = "photosync_device_id";
+    public const string UserClaim = "photosync_user_id";
     public const string GoogleSubjectClaim = "photosync_google_subject";
 
     public static string? ReadSecret(HttpRequest request)
@@ -53,6 +54,8 @@ public sealed class DeviceAuthentication(
             new Claim(DeviceClaim, device!.Id.ToString()),
             new Claim(ClaimTypes.NameIdentifier, uuid.ToString())
         };
+        if (device.UserId is int userId)
+            claims.Add(new Claim(UserClaim, userId.ToString()));
         if (!string.IsNullOrWhiteSpace(device.GoogleSubject))
             claims.Add(new Claim(GoogleSubjectClaim, device.GoogleSubject));
         var identity = new ClaimsIdentity(claims, SchemeName);
