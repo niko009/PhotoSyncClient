@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using PhotoSync.Server.Models;
 
 namespace PhotoSync.Server.Data;
 
@@ -95,24 +96,32 @@ public static class FamilySharingSchema
             UPDATE files
             SET UploaderUserId = (SELECT d.UserId FROM devices d WHERE d.Id = files.DeviceId)
             WHERE UploaderUserId IS NULL;
-
-            INSERT INTO families (Name, CreatedAtUtc)
-            SELECT COALESCE(NULLIF(TRIM(u.GoogleDisplayName), ''), 'My family'), CURRENT_TIMESTAMP
-            FROM users u
-            WHERE NOT EXISTS (SELECT 1 FROM family_members fm WHERE fm.UserId = u.Id);
-
-            INSERT OR IGNORE INTO family_members (FamilyId, UserId, Role, IsActive, JoinedAtUtc)
-            SELECT f.Id, u.Id, 1, 1, CURRENT_TIMESTAMP
-            FROM users u
-            JOIN families f ON f.Id = (
-                SELECT f2.Id FROM families f2
-                WHERE NOT EXISTS (SELECT 1 FROM family_members fm2 WHERE fm2.FamilyId = f2.Id)
-                ORDER BY f2.Id LIMIT 1
-            )
-            WHERE NOT EXISTS (SELECT 1 FROM family_members fm WHERE fm.UserId = u.Id);
             """);
 
         await transaction.CommitAsync();
+
+        var usersWithoutFamily = await db.Users
+            .Where(u => !db.FamilyMembers.Any(m => m.UserId == u.Id))
+            .ToListAsync();
+        foreach (var user in usersWithoutFamily)
+        {
+            var family = new FamilyEntity
+            {
+                Name = string.IsNullOrWhiteSpace(user.GoogleDisplayName) ? "My family" : user.GoogleDisplayName + " family",
+                CreatedAtUtc = DateTimeOffset.UtcNow
+            };
+            db.Families.Add(family);
+            await db.SaveChangesAsync();
+            db.FamilyMembers.Add(new FamilyMemberEntity
+            {
+                FamilyId = family.Id,
+                UserId = user.Id,
+                Role = FamilyRole.Owner,
+                IsActive = true,
+                JoinedAtUtc = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task AddColumnIfMissingAsync(PhotoSyncDbContext db, System.Data.Common.DbTransaction transaction,
