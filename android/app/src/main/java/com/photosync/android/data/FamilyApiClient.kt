@@ -1,5 +1,7 @@
 package com.photosync.android.data
 
+import android.os.Build
+import com.photosync.android.BuildConfig
 import com.photosync.android.domain.model.FamilyInfo
 import com.photosync.android.domain.model.FamilyInvite
 import com.photosync.android.domain.model.FamilyMember
@@ -30,12 +32,25 @@ class FamilyApiClient(
 
     fun acceptInvite(token: String, idToken: String) {
         require(token.matches(Regex("[A-Za-z0-9_-]{20,256}"))) { "Invalid invitation link" }
+        ensureDeviceRegistered()
         val googlePayload = JSONObject().put("id_token", idToken)
-        // A recipient opening a deep link may not yet have a PhotoSync User row.
-        // Link the authenticated device to the verified Google subject first;
-        // the server then uses that permanent subject when accepting the invite.
+        // Link this installation to the verified Google subject first. This is
+        // essential when the invite URL opened a freshly installed PhotoSync app.
         request("/api/auth/google/sign-in", "POST", googlePayload)
         request("/api/family/join/$token", "POST", googlePayload)
+    }
+
+    private fun ensureDeviceRegistered() {
+        val origin = ServerAddress.normalize(preferencesStore.getServerUrl())
+        val uuid = identity.credentials(origin).first
+        request(
+            "/api/devices/register",
+            "POST",
+            JSONObject()
+                .put("device_uuid", uuid)
+                .put("device_name", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
+                .put("app_version", BuildConfig.VERSION_NAME),
+        )
     }
 
     private fun request(path: String, method: String, payload: JSONObject? = null): JSONObject {
