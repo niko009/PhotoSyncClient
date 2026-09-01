@@ -19,6 +19,16 @@ public sealed record AlbumListItem(
 public sealed record AlbumsResponse(
     [property: JsonPropertyName("albums")] IReadOnlyList<AlbumListItem> Albums);
 
+public sealed record AccessibleAlbumItem(
+    [property: JsonPropertyName("album_id")] int AlbumId,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("permission")] string Permission,
+    [property: JsonPropertyName("sharing_mode")] string SharingMode,
+    [property: JsonPropertyName("owned_by_me")] bool OwnedByMe);
+
+public sealed record AccessibleAlbumsResponse(
+    [property: JsonPropertyName("albums")] IReadOnlyList<AccessibleAlbumItem> Albums);
+
 public sealed record UpdateAlbumSharingRequest(
     [property: JsonPropertyName("mode")] string Mode,
     [property: JsonPropertyName("family_permission")] string? FamilyPermission,
