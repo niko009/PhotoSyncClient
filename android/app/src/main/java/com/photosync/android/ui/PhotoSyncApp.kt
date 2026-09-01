@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,8 @@ import com.photosync.android.ui.home.HomeScreen
 import com.photosync.android.ui.home.HomeViewModel
 import com.photosync.android.ui.settings.SettingsScreen
 import com.photosync.android.ui.settings.SettingsViewModel
+import com.photosync.android.ui.family.FamilyScreen
+import com.photosync.android.data.FamilyApiClient
 import com.photosync.android.data.GoogleCredentialClient
 import kotlinx.coroutines.launch
 
@@ -32,6 +35,7 @@ private object PhotoSyncRoute {
     const val home = "home"
     const val folder = "folder"
     const val settings = "settings"
+    const val family = "family"
     const val folderIdArg = "folderId"
 
     fun folderPath(folderId: String): String = "$folder/$folderId"
@@ -40,6 +44,9 @@ private object PhotoSyncRoute {
 @Composable
 fun PhotoSyncApp(
     repository: PhotoSyncRepository,
+    familyApi: FamilyApiClient,
+    pendingInviteToken: String? = null,
+    onInviteHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
@@ -54,6 +61,12 @@ fun PhotoSyncApp(
             }
         }
         pendingFolderUploadViewModel = null
+    }
+
+    LaunchedEffect(pendingInviteToken) {
+        if (pendingInviteToken != null && navController.currentDestination?.route != PhotoSyncRoute.family) {
+            navController.navigate(PhotoSyncRoute.family) { launchSingleTop = true }
+        }
     }
 
     NavHost(
@@ -96,6 +109,16 @@ fun PhotoSyncApp(
                     }
                 },
                 onGoogleSignOut = viewModel::signOutFromGoogle,
+                onOpenFamily = { navController.navigate(PhotoSyncRoute.family) },
+            )
+        }
+
+        composable(route = PhotoSyncRoute.family) {
+            FamilyScreen(
+                api = familyApi,
+                pendingInviteToken = pendingInviteToken,
+                onInviteHandled = onInviteHandled,
+                onBack = navController::popBackStack,
             )
         }
 
