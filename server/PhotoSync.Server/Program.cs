@@ -55,6 +55,14 @@ builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>
 
 var app = builder.Build();
 app.UseForwardedHeaders();
+app.Use(async (context, next) =>
+{
+    // The Bacus proxy terminates TLS. Promote only the explicitly configured
+    // public HTTPS origin, never an arbitrary forwarded header.
+    if (!context.Request.IsHttps && PhotoSync.Server.Portal.PortalSetup.IsSecurePortalRequest(context, app.Configuration))
+        context.Request.Scheme = Uri.UriSchemeHttps;
+    await next(context);
+});
 
 app.UseExceptionHandler(exceptionApp =>
 {

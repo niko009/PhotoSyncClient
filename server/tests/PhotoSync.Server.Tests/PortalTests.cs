@@ -74,7 +74,13 @@ public sealed class PortalTests
         using var other = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://other.example.test") });
         var allowed = await matching.GetFromJsonAsync<JsonElement>("/api/portal/status");
         Assert.True(allowed.GetProperty("googleLoginAvailable").GetBoolean());
-        Assert.Equal(HttpStatusCode.OK, (await matching.GetAsync("/api/portal/csrf")).StatusCode);
+        var csrfResponse = await matching.GetAsync("/api/portal/csrf");
+        csrfResponse.EnsureSuccessStatusCode();
+        var token = (await csrfResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("token").GetString();
+        matching.DefaultRequestHeaders.Add("X-PhotoSync-CSRF", token);
+        matching.DefaultRequestHeaders.Add("Cookie", csrfResponse.Headers.GetValues("Set-Cookie").Single().Split(';')[0]);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await matching.PostAsJsonAsync("/api/portal/google-login", new { idToken = "invalid" })).StatusCode);
         var denied = await other.GetFromJsonAsync<JsonElement>("/api/portal/status");
         Assert.False(denied.GetProperty("googleLoginAvailable").GetBoolean());
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await other.GetAsync("/api/portal/csrf")).StatusCode);
