@@ -115,29 +115,15 @@ Recommended structure:
 
 ```text
 PhotoSync/
-  devices/
-    Samsung_S24/
-      Family/
-        2026/
-          06/
-            IMG_0001.jpg
-            IMG_0002.jpg
-      Work/
-        2026/
-          06/
-            VID_0101.mp4
-    Pixel_8/
-      Travel/
-        2026/
-          05/
-            IMG_9001.jpg
-  previews/
-    Samsung_S24/
-      Family/
-        2026/
-          06/
-            IMG_0001.preview.jpg
-            VID_0101.preview.jpg
+  Samsung_S24_Mihail_Bacus/
+    Family/
+      IMG_0001.jpg
+      IMG_0002.jpg
+    Work/
+      VID_0101.mp4
+  Pixel_8_Anna_Bacus/
+    Travel/
+      IMG_9001.jpg
   system/
     photosync.db
     logs/
@@ -145,9 +131,10 @@ PhotoSync/
 
 Why this structure:
 
-- separates media by device
+- groups media by phone model and verified Google display name
 - preserves app logical folders
-- prevents oversized flat directories
+- uses `local` as the user segment before Google linking
+- sanitizes every directory as one portable Windows-safe segment
 - keeps computer-side browsing intuitive
 
 If duplicate file names occur, server renames safely:

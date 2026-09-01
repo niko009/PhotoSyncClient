@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PhotoSync.Server.Contracts;
 using PhotoSync.Server.Data;
 using PhotoSync.Server.Security;
+using PhotoSync.Server.Services;
 
 namespace PhotoSync.Server.Endpoints;
 
@@ -29,6 +30,7 @@ public static class GoogleAuthEndpoints
         device.GoogleSubject = identity.Subject;
         device.GoogleEmail = identity.Email;
         device.GoogleDisplayName = identity.DisplayName;
+        device.StorageFolderName = StoragePathResolver.MakeDeviceOwnerFolderName(device.DeviceName, identity.DisplayName);
         await db.SaveChangesAsync(cancellationToken);
         return Results.Ok(await ResponseAsync(db, identity.Subject, identity.Email, identity.DisplayName, cancellationToken));
     }
@@ -45,6 +47,7 @@ public static class GoogleAuthEndpoints
         var device = await CurrentDeviceAsync(context, db, cancellationToken);
         if (device is null) return Results.Unauthorized();
         device.GoogleSubject = device.GoogleEmail = device.GoogleDisplayName = null;
+        device.StorageFolderName = StoragePathResolver.MakeDeviceOwnerFolderName(device.DeviceName, null);
         await db.SaveChangesAsync(cancellationToken);
         return Results.Ok(new { signed_out = true });
     }

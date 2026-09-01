@@ -55,7 +55,7 @@ public static class DeviceEndpoints
                 DeviceUuid = request.DeviceUuid,
                 DeviceName = request.DeviceName.Trim(),
                 AppVersion = request.AppVersion.Trim(),
-                StorageFolderName = StoragePathResolver.MakeDeviceFolderName(request.DeviceName, request.DeviceUuid),
+                StorageFolderName = StoragePathResolver.MakeDeviceOwnerFolderName(request.DeviceName, null),
                 LastSeenAtUtc = now
             };
 
@@ -71,6 +71,7 @@ public static class DeviceEndpoints
                 return Results.Unauthorized();
             device.DeviceName = request.DeviceName.Trim();
             device.AppVersion = request.AppVersion.Trim();
+            device.StorageFolderName = StoragePathResolver.MakeDeviceOwnerFolderName(device.DeviceName, device.GoogleDisplayName);
             device.LastSeenAtUtc = now;
         }
 

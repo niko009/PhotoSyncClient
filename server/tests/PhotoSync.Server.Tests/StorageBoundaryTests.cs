@@ -16,12 +16,13 @@ public sealed class StorageBoundaryTests
         => Assert.Equal(expected, StoragePathResolver.MakeSafeFolderName(input));
 
     [Fact]
-    public void DeviceFoldersUseTheEntireUuid()
-    {
-        var first = Guid.Parse("12345678-0000-0000-0000-000000000001");
-        var second = Guid.Parse("12345678-0000-0000-0000-000000000002");
-        Assert.NotEqual(StoragePathResolver.MakeDeviceFolderName("Phone", first), StoragePathResolver.MakeDeviceFolderName("Phone", second));
-    }
+    public void DeviceFoldersCombinePhoneAndVerifiedUserName()
+        => Assert.Equal("Pixel_9_Mihail_Bacus",
+            StoragePathResolver.MakeDeviceOwnerFolderName("Pixel 9", "Mihail Bacus"));
+
+    [Fact]
+    public void DeviceFoldersUseLocalFallbackWithoutGoogle()
+        => Assert.Equal("Pixel_9_local", StoragePathResolver.MakeDeviceOwnerFolderName("Pixel 9", null));
 
     [Fact]
     public void RefusesPathOutsideRoot()

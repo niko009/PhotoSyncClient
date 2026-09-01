@@ -44,8 +44,7 @@ public sealed class ApiTests
         var createdAlbum = await createResponse.Content.ReadFromJsonAsync<CreateAlbumResponse>();
         Assert.NotNull(createdAlbum);
         Assert.True(createdAlbum.Created);
-        Assert.Contains("Samsung_S24", createdAlbum.ServerFolderPath);
-        Assert.Contains("Family_2026", createdAlbum.ServerFolderPath);
+        Assert.Equal("Samsung_S24_local/Family_2026", createdAlbum.ServerFolderPath);
 
         var listResponse = await client.GetAsync($"/api/albums?device_uuid={deviceUuid}");
         listResponse.EnsureSuccessStatusCode();
@@ -96,7 +95,7 @@ public sealed class ApiTests
 
         var uploadPayload = await uploadResponse.Content.ReadFromJsonAsync<UploadFileResponse>();
         Assert.NotNull(uploadPayload);
-        Assert.Contains("/Trips/", uploadPayload.RelativePath);
+        Assert.Matches("^Pixel_9_local/Trips/IMG_0001\\.jpg$", uploadPayload.RelativePath);
 
         var absoluteFilePath = Path.Combine(factory.StoragePath, uploadPayload.RelativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(absoluteFilePath));

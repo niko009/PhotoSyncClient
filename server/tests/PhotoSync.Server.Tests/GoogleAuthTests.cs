@@ -24,7 +24,10 @@ public sealed class GoogleAuthTests
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await first.PostAsJsonAsync("/api/auth/google/sign-in", new { id_token = "invalid" })).StatusCode);
         (await first.PostAsJsonAsync("/api/auth/google/sign-in", new { id_token = "first" })).EnsureSuccessStatusCode();
-        (await first.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(firstUuid, "Shared"))).EnsureSuccessStatusCode();
+        var albumResponse = await first.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(firstUuid, "Shared"));
+        albumResponse.EnsureSuccessStatusCode();
+        Assert.Equal("Phone_Family_User/Shared",
+            (await albumResponse.Content.ReadFromJsonAsync<CreateAlbumResponse>())!.ServerFolderPath);
         var linked = await second.PostAsJsonAsync("/api/auth/google/sign-in", new { id_token = "second" });
         linked.EnsureSuccessStatusCode();
         Assert.Equal(2, (await linked.Content.ReadFromJsonAsync<GoogleAccountResponse>())!.LinkedDevices);

@@ -14,7 +14,7 @@ public sealed class StoragePathResolver(IOptions<PhotoSyncOptions> options)
     public string TempRoot => Path.Combine(_storageRoot, "_temp");
 
     public string GetAlbumRelativeDirectory(DeviceEntity device, AlbumEntity album)
-        => Path.Combine("devices", device.StorageFolderName, album.StorageFolderName);
+        => Path.Combine(device.StorageFolderName, album.StorageFolderName);
 
     public string GetFinalRelativePath(DeviceEntity device, AlbumEntity album, DateTimeOffset createdAtUtc, string originalName, string? suffix = null)
     {
@@ -25,11 +25,7 @@ public sealed class StoragePathResolver(IOptions<PhotoSyncOptions> options)
             ? fileName
             : $"{baseName}_{suffix}{extension}";
 
-        return Path.Combine(
-            GetAlbumRelativeDirectory(device, album),
-            createdAtUtc.UtcDateTime.ToString("yyyy"),
-            createdAtUtc.UtcDateTime.ToString("MM"),
-            effectiveName);
+        return Path.Combine(GetAlbumRelativeDirectory(device, album), effectiveName);
     }
 
     public string ToAbsolutePath(string relativePath)
@@ -59,8 +55,8 @@ public sealed class StoragePathResolver(IOptions<PhotoSyncOptions> options)
         return AvoidReservedName(collapsed.Length > 100 ? collapsed[..100] : collapsed);
     }
 
-    public static string MakeDeviceFolderName(string deviceName, Guid deviceUuid)
-        => $"{MakeSafeFolderName(deviceName)}_{deviceUuid:N}";
+    public static string MakeDeviceOwnerFolderName(string deviceName, string? userName)
+        => $"{MakeSafeFolderName(deviceName)}_{MakeSafeFolderName(string.IsNullOrWhiteSpace(userName) ? "local" : userName)}";
 
     public static string MakeSafeFileName(string value)
     {

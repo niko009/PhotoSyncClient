@@ -51,7 +51,7 @@ The deployed Compose configuration places both original media
 and SQLite in the named volume `bacus-photosync-data`:
 
 - `/data/system/photosync.db`: metadata database (including its WAL/SHM files).
-- `/data/devices/`: uploaded media.
+- storage root contains `{phone_model}_{user_name}/{folder_name}/` media directories.
 - `/data/_temp/`: temporary uploads.
 
 This is not the final storage layout. The confirmed host is Windows with an Ubuntu

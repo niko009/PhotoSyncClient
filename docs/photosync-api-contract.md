@@ -193,12 +193,12 @@ Purpose:
     {
       "album_id": 21,
       "name": "Family",
-      "server_folder_path": "devices/Samsung_S24/Family"
+      "server_folder_path": "Samsung_S24_Mihail_Bacus/Family"
     },
     {
       "album_id": 22,
       "name": "Travel",
-      "server_folder_path": "devices/Samsung_S24/Travel"
+      "server_folder_path": "Samsung_S24_Mihail_Bacus/Travel"
     }
   ]
 }
@@ -228,7 +228,7 @@ Purpose:
 {
   "album_id": 21,
   "created": true,
-  "server_folder_path": "devices/Samsung_S24/Family"
+  "server_folder_path": "Samsung_S24_Mihail_Bacus/Family"
 }
 ```
 
@@ -259,7 +259,7 @@ Purpose:
 {
   "exists": true,
   "server_file_id": 1051,
-  "relative_path": "devices/Samsung_S24/Family/2026/06/IMG_0001.jpg"
+  "relative_path": "Samsung_S24_Mihail_Bacus/Family/IMG_0001.jpg"
 }
 ```
 
@@ -306,7 +306,7 @@ Recommended for:
 {
   "server_file_id": 1051,
   "stored_name": "IMG_0001.jpg",
-  "relative_path": "devices/Samsung_S24/Family/2026/06/IMG_0001.jpg",
+  "relative_path": "Samsung_S24_Mihail_Bacus/Family/IMG_0001.jpg",
   "has_preview": true,
   "uploaded_at": "2026-06-04T13:31:47Z"
 }
@@ -386,7 +386,7 @@ Purpose:
 {
   "server_file_id": 2051,
   "stored_name": "VID_0101.mp4",
-  "relative_path": "devices/Samsung_S24/Family/2026/06/VID_0101.mp4",
+  "relative_path": "Samsung_S24_Mihail_Bacus/Family/VID_0101.mp4",
   "uploaded_at": "2026-06-04T13:38:10Z"
 }
 ```
@@ -447,7 +447,7 @@ Purpose:
       "server_file_id": 1051,
       "album_name": "Family",
       "original_name": "IMG_0001.jpg",
-      "relative_path": "devices/Samsung_S24/Family/2026/06/IMG_0001.jpg",
+      "relative_path": "Samsung_S24_Mihail_Bacus/Family/IMG_0001.jpg",
       "mime_type": "image/jpeg",
       "size_bytes": 3821192,
       "uploaded_at": "2026-06-04T13:31:47Z",
