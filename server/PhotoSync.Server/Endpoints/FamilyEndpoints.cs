@@ -112,11 +112,11 @@ public static class FamilyEndpoints
         var identity = await verifier.VerifyAsync(request.IdToken, ct);
         if (identity is null) return Results.Unauthorized();
 
-        var user = await db.Users.SingleOrDefaultAsync(x => x.Id == currentUserId.Value, ct);
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == currentUserId.Value, ct);
         if (user is null || !string.Equals(user.GoogleSubject, identity.Subject, StringComparison.Ordinal)) return Results.Unauthorized();
 
-        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
-        var invite = await db.FamilyInvitations.SingleOrDefaultAsync(x => x.TokenHash == HashToken(token), ct);
+        var hash = HashToken(token);
+        var invite = await db.FamilyInvitations.AsNoTracking().SingleOrDefaultAsync(x => x.TokenHash == hash, ct);
         if (invite is null) return Results.NotFound();
         var now = DateTimeOffset.UtcNow;
         if (invite.RevokedAtUtc is not null) return Results.Conflict(new { error = "invite_revoked" });
@@ -127,6 +127,22 @@ public static class FamilyEndpoints
         if (!string.Equals(verifiedEmail, invite.ExpectedEmail, StringComparison.Ordinal))
             return Results.BadRequest(new { error = "wrong_google_account", expected_email = MaskEmail(invite.ExpectedEmail) });
 
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+
+        // Atomic one-time claim. We deliberately claim before changing membership;
+        // any later validation failure rolls the transaction back and leaves the invite usable.
+        var claimed = await db.FamilyInvitations
+            .Where(x => x.Id == invite.Id && x.AcceptedAtUtc == null && x.RevokedAtUtc == null && x.ExpiresAtUtc > now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.AcceptedAtUtc, now)
+                .SetProperty(x => x.AcceptedByUserId, user.Id), ct);
+        if (claimed != 1)
+        {
+            await transaction.RollbackAsync(ct);
+            return Results.Conflict(new { error = "invite_already_used" });
+        }
+
+        var trackedUser = await db.Users.SingleAsync(x => x.Id == user.Id, ct);
         var membership = await db.FamilyMembers.SingleOrDefaultAsync(x => x.UserId == user.Id, ct);
         if (membership is not null && membership.FamilyId != invite.FamilyId)
         {
@@ -134,7 +150,10 @@ public static class FamilyEndpoints
             {
                 var oldFamilyMemberCount = await db.FamilyMembers.CountAsync(x => x.FamilyId == membership.FamilyId && x.IsActive, ct);
                 if (membership.Role != FamilyRole.Owner || oldFamilyMemberCount != 1)
+                {
+                    await transaction.RollbackAsync(ct);
                     return Results.Conflict(new { error = "already_in_another_family" });
+                }
             }
             membership.FamilyId = invite.FamilyId;
             membership.Role = FamilyRole.Member;
@@ -160,10 +179,8 @@ public static class FamilyEndpoints
             membership.RemovedAtUtc = null;
         }
 
-        user.GoogleEmail = verifiedEmail;
-        user.GoogleDisplayName = identity.DisplayName;
-        invite.AcceptedAtUtc = now;
-        invite.AcceptedByUserId = user.Id;
+        trackedUser.GoogleEmail = verifiedEmail;
+        trackedUser.GoogleDisplayName = identity.DisplayName;
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Results.Ok(new { joined = true, family_id = invite.FamilyId });
