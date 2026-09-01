@@ -15,10 +15,20 @@ public sealed class FolderAccessService(PhotoSyncDbContext db, IHttpContextAcces
     {
         var userId = CurrentUserId;
         if (userId is null)
-            return CurrentDeviceId == album.DeviceId ? FolderPermission.Owner : FolderPermission.None;
+            return album.ArchivedAtUtc is null && CurrentDeviceId == album.DeviceId ? FolderPermission.Owner : FolderPermission.None;
 
-        if (album.OwnerUserId == userId.Value) return FolderPermission.Owner;
         if (album.ArchivedAtUtc is not null) return FolderPermission.None;
+        if (album.OwnerUserId == userId.Value) return FolderPermission.Owner;
+
+        var ownerFamilyId = await db.FamilyMembers.AsNoTracking()
+            .Where(x => x.UserId == album.OwnerUserId && x.IsActive)
+            .Select(x => (int?)x.FamilyId)
+            .SingleOrDefaultAsync(ct);
+        if (ownerFamilyId is null) return FolderPermission.None;
+
+        var activeMember = await db.FamilyMembers.AsNoTracking()
+            .AnyAsync(x => x.UserId == userId.Value && x.FamilyId == ownerFamilyId.Value && x.IsActive, ct);
+        if (!activeMember) return FolderPermission.None;
 
         if (album.SharingMode == FolderSharingMode.SelectedPeople)
         {
@@ -27,19 +37,9 @@ public sealed class FolderAccessService(PhotoSyncDbContext db, IHttpContextAcces
             return acl?.Permission ?? FolderPermission.None;
         }
 
-        if (album.SharingMode == FolderSharingMode.WholeFamily)
-        {
-            var ownerFamilyId = await db.FamilyMembers.AsNoTracking()
-                .Where(x => x.UserId == album.OwnerUserId && x.IsActive)
-                .Select(x => (int?)x.FamilyId)
-                .SingleOrDefaultAsync(ct);
-            if (ownerFamilyId is null) return FolderPermission.None;
-            var activeMember = await db.FamilyMembers.AsNoTracking()
-                .AnyAsync(x => x.UserId == userId.Value && x.FamilyId == ownerFamilyId.Value && x.IsActive, ct);
-            return activeMember ? album.FamilyPermission : FolderPermission.None;
-        }
-
-        return FolderPermission.None;
+        return album.SharingMode == FolderSharingMode.WholeFamily
+            ? album.FamilyPermission
+            : FolderPermission.None;
     }
 
     public async Task<bool> CanViewAsync(AlbumEntity album, CancellationToken ct) =>
