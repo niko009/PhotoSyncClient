@@ -18,3 +18,8 @@ public sealed record AlbumListItem(
 
 public sealed record AlbumsResponse(
     [property: JsonPropertyName("albums")] IReadOnlyList<AlbumListItem> Albums);
+
+public sealed record UpdateAlbumSharingRequest(
+    [property: JsonPropertyName("mode")] string Mode,
+    [property: JsonPropertyName("family_permission")] string? FamilyPermission,
+    [property: JsonPropertyName("selected_people")] IReadOnlyDictionary<int, string>? SelectedPeople);
