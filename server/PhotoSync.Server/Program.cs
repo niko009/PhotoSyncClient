@@ -44,6 +44,7 @@ builder.Services.AddDbContext<PhotoSyncDbContext>((services, options) =>
 });
 builder.Services.AddSingleton<StoragePathResolver>();
 builder.Services.AddScoped<FileStorageService>();
+builder.Services.AddScoped<FolderAccessService>();
 builder.Services.AddSingleton<UploadGuard>();
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
 {
