@@ -97,7 +97,7 @@ app.Use(async (context, next) =>
     context.Response.Headers.CacheControl = "no-store";
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
-    context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; frame-ancestors 'none'; form-action 'self'; base-uri 'none'";
+    context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self'; img-src 'self'; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; frame-ancestors 'none'; form-action 'self'; base-uri 'none'";
     await next(context);
 });
 
