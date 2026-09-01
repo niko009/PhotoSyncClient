@@ -15,7 +15,7 @@ android {
         versionName = "0.2.0-beta"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://photosync.bacus.dev\"")
         // Public OAuth identifier. Never place the Google client_secret in an APK.
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"221018828266-k1k4pe2llia68jucd88tidh2v1p5jgba.apps.googleusercontent.com\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"221018828266-g4jt660ltqoaf2oniuolc82i3m1mpoee.apps.googleusercontent.com\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
