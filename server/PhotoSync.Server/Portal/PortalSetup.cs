@@ -22,6 +22,14 @@ public static class PortalSetup
         return Path.GetDirectoryName(Path.GetFullPath(connection.DataSource))!;
     }
 
+    public static bool IsSecurePortalRequest(HttpContext context, IConfiguration config)
+    {
+        if (context.Request.IsHttps) return true;
+        return Uri.TryCreate(config["Portal:PublicOrigin"], UriKind.Absolute, out var origin) &&
+            origin.Scheme == Uri.UriSchemeHttps &&
+            string.Equals(origin.Host, context.Request.Host.Host, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static IServiceCollection AddPortal(this IServiceCollection services)
     {
         services.AddDbContext<PortalDbContext>((sp, options) =>

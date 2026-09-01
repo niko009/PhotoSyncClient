@@ -64,6 +64,23 @@ public sealed class PortalTests
     }
 
     [Fact]
+    public async Task ConfiguredHttpsPublicOrigin_AllowsOnlyMatchingProxyHost()
+    {
+        await using var factory = new TestPhotoSyncFactory(new Dictionary<string, string?>
+        {
+            ["Portal:PublicOrigin"] = "https://photosync.example.test"
+        });
+        using var matching = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://photosync.example.test") });
+        using var other = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://other.example.test") });
+        var allowed = await matching.GetFromJsonAsync<JsonElement>("/api/portal/status");
+        Assert.True(allowed.GetProperty("googleLoginAvailable").GetBoolean());
+        Assert.Equal(HttpStatusCode.OK, (await matching.GetAsync("/api/portal/csrf")).StatusCode);
+        var denied = await other.GetFromJsonAsync<JsonElement>("/api/portal/status");
+        Assert.False(denied.GetProperty("googleLoginAvailable").GetBoolean());
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await other.GetAsync("/api/portal/csrf")).StatusCode);
+    }
+
+    [Fact]
     public async Task GooglePortalLogin_LinksVerifiedDevices_AndBootstrapsOnlyExistingSingleOwner()
     {
         await using var factory = new TestPhotoSyncFactory(googleVerifier: new PortalGoogleVerifier());

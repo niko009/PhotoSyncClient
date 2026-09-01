@@ -17,9 +17,9 @@ public static class PortalEndpoints
     {
         app.MapGet("/", () => Results.Redirect("/portal/")).AllowAnonymous();
         app.MapGet("/portal/", (IWebHostEnvironment env) => Results.File(Path.Combine(env.WebRootPath, "portal", "index.html"), "text/html")).AllowAnonymous();
-        app.MapGet("/api/portal/status", async (HttpContext context, PortalDbContext db, IOptions<GoogleAuthOptions> google) =>
+        app.MapGet("/api/portal/status", async (HttpContext context, PortalDbContext db, IOptions<GoogleAuthOptions> google, IConfiguration config) =>
         {
-            var secure = context.Request.IsHttps;
+            var secure = PortalSetup.IsSecurePortalRequest(context, config);
             var passwordLogin = secure && await db.Users.AnyAsync();
             var googleLogin = secure && !string.IsNullOrWhiteSpace(google.Value.ClientId);
             return Results.Ok(new
@@ -30,10 +30,12 @@ public static class PortalEndpoints
                 googleClientId = googleLogin ? google.Value.ClientId : null
             });
         }).AllowAnonymous();
-        app.MapGet("/api/portal/csrf", async (HttpContext context, IAntiforgery csrf) =>
+        app.MapGet("/api/portal/csrf", async (HttpContext context, IAntiforgery csrf, IConfiguration config) =>
         {
-            if (!context.Request.IsHttps)
+            if (!PortalSetup.IsSecurePortalRequest(context, config))
                 return Results.Json(new { error = "portal_setup_required" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            // The browser connection is HTTPS even when the final trusted container hop is HTTP.
+            if (!context.Request.IsHttps) context.Request.Scheme = Uri.UriSchemeHttps;
             var session = await context.AuthenticateAsync(PortalSetup.Scheme);
             context.User = session.Principal ?? new ClaimsPrincipal(new ClaimsIdentity());
             return Results.Ok(new { token = csrf.GetAndStoreTokens(context).RequestToken });

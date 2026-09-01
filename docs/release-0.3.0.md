@@ -35,7 +35,7 @@ APK SHA-256:
 
 ## Проверки
 
-- 31 серверный integration/unit test;
+- 32 серверных integration/unit теста;
 - Android debug assemble и unit tests;
 - release APK assemble и APK Signature Scheme v2 verification;
 - release server publish.

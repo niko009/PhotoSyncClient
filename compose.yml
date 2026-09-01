@@ -15,6 +15,7 @@ services:
       PhotoSync__MaxFileBytes: "26214400"
       # Public OAuth audience used for server-side Google ID-token validation.
       GoogleAuth__ClientId: 221018828266-g4jt660ltqoaf2oniuolc82i3m1mpoee.apps.googleusercontent.com
+      Portal__PublicOrigin: https://photosync.bacus.dev
     # Provision privately on Ubuntu; never commit this file or its contents.
     env_file:
       - path: /srv/bacus/apps/photosync/portal.env
