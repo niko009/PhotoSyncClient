@@ -2,6 +2,7 @@ package com.photosync.android.data
 
 import android.os.Build
 import com.photosync.android.BuildConfig
+import com.photosync.android.domain.model.AccessibleAlbum
 import com.photosync.android.domain.model.FamilyInfo
 import com.photosync.android.domain.model.FamilyInvite
 import com.photosync.android.domain.model.FamilyMember
@@ -15,6 +16,36 @@ class FamilyApiClient(
     private val identity: DeviceIdentity,
 ) {
     fun getFamily(): FamilyInfo = request("/api/family", "GET").toFamilyInfo()
+
+    fun getAccessibleAlbums(): List<AccessibleAlbum> {
+        val array = request("/api/albums/accessible", "GET").getJSONArray("albums")
+        return buildList {
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                add(AccessibleAlbum(
+                    albumId = item.getInt("album_id"),
+                    name = item.getString("name"),
+                    permission = item.getString("permission"),
+                    sharingMode = item.getString("sharing_mode"),
+                    ownedByMe = item.getBoolean("owned_by_me"),
+                ))
+            }
+        }
+    }
+
+    fun updateAlbumSharing(albumId: Int, mode: String, familyPermission: String = "View", selectedPeople: Map<Int, String>? = null) {
+        val selected = selectedPeople?.let { map ->
+            JSONObject().apply { map.forEach { (userId, permission) -> put(userId.toString(), permission) } }
+        }
+        request(
+            "/api/albums/$albumId/sharing",
+            "PUT",
+            JSONObject()
+                .put("mode", mode)
+                .put("family_permission", familyPermission)
+                .put("selected_people", selected ?: JSONObject.NULL),
+        )
+    }
 
     fun createInvite(email: String): FamilyInvite = request(
         "/api/family/invites",
@@ -34,8 +65,6 @@ class FamilyApiClient(
         require(token.matches(Regex("[A-Za-z0-9_-]{20,256}"))) { "Invalid invitation link" }
         ensureDeviceRegistered()
         val googlePayload = JSONObject().put("id_token", idToken)
-        // Link this installation to the verified Google subject first. This is
-        // essential when the invite URL opened a freshly installed PhotoSync app.
         request("/api/auth/google/sign-in", "POST", googlePayload)
         request("/api/family/join/$token", "POST", googlePayload)
     }
