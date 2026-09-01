@@ -97,13 +97,14 @@ app.Use(async (context, next) =>
     context.Response.Headers.CacheControl = "no-store";
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
-    context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self'; img-src 'self'; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; frame-ancestors 'none'; form-action 'self'; base-uri 'none'";
+    context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; frame-ancestors 'none'; form-action 'self'; base-uri 'none'";
     await next(context);
 });
 
 app.MapServerEndpoints();
 app.MapGoogleAuthEndpoints();
 app.MapFamilyEndpoints();
+app.MapJoinLanding();
 app.MapPortal();
 app.MapGet("/health", async (PhotoSyncDbContext db) =>
     await db.Database.CanConnectAsync() ? Results.Ok(new { status = "ok", service = "photosync", protocol_version = 2 }) : Results.StatusCode(503)).AllowAnonymous();
@@ -111,23 +112,7 @@ app.MapAdminEndpoints();
 app.MapDeviceEndpoints();
 app.MapAlbumEndpoints();
 app.MapFileEndpoints();
-app.MapGet("/api/stats/summary", async (PhotoSyncDbContext dbContext, CancellationToken cancellationToken) =>
-{
-    var deviceCount = await dbContext.Devices.CountAsync(cancellationToken);
-    var fileCount = await dbContext.Files.CountAsync(cancellationToken);
-    var bytesTotal = await dbContext.Files.SumAsync(x => (long?)x.SizeBytes, cancellationToken) ?? 0;
-    var videoCount = await dbContext.Files.CountAsync(x => x.IsVideo, cancellationToken);
-    var photoCount = fileCount - videoCount;
-
-    return Results.Ok(new
-    {
-        device_count = deviceCount,
-        file_count = fileCount,
-        photo_count = photoCount,
-        video_count = videoCount,
-        bytes_total = bytesTotal
-    });
-});
+app.MapStatsEndpoints();
 
 app.Run();
 
