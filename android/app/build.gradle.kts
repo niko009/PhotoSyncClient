@@ -11,9 +11,11 @@ android {
         applicationId = "com.photosync.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
-        buildConfigField("String", "DEFAULT_SERVER_URL", "\"http://10.130.60.138:5187\"")
+        versionCode = 2
+        versionName = "0.2.0-beta"
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://photosync.bacus.dev\"")
+        // Public OAuth identifier. Never place the Google client_secret in an APK.
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"221018828266-k1k4pe2llia68jucd88tidh2v1p5jgba.apps.googleusercontent.com\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

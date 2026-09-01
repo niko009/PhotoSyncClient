@@ -121,3 +121,18 @@ NuGet audit не обнаружил известных уязвимых зави
 SDK: проверка выполнена установленным .NET 10.0.400 из корня репозитория.
 В `server/global.json` остаётся исходный pin 10.0.204; запуск из `server/` требует
 этого SDK. Pin не менялся в рамках первого кабинета.
+
+## Google OAuth configuration
+
+The public Web/Server Client ID is configured in Android `BuildConfig`, server
+`appsettings.json` and the deployed Compose environment. No Google client secret
+is required for ID-token authentication, and no secret may be embedded in the APK.
+
+Google Cloud must also contain an Android OAuth client in the same project:
+
+- package name: `com.photosync.android`;
+- release signing SHA-1: `52:DB:EB:ED:D4:CC:89:5B:1B:2C:EF:DF:8B:4E:44:B3:60:6F:4F:B4`.
+
+If the OAuth consent screen is in Testing mode, add each Google account that will
+test PhotoSync. This configuration alone does not enable the feature: Credential
+Manager UI, backend token validation and account/device linking remain implementation work.

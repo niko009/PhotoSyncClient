@@ -16,6 +16,7 @@ local.properties
 server/data/
 /data/
 output/
+/android/signing/
 android/.gradle/
 android/local.properties
 *.csproj.user
