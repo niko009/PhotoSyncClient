@@ -32,7 +32,6 @@ builder.Services
 
 builder.Services.AddDbContext<PhotoSyncDbContext>((services, options) =>
 {
-    // Resolve at scope creation so test-host and deployment overrides are honored.
     var connectionString = services.GetRequiredService<IConfiguration>().GetConnectionString("PhotoSync")
         ?? "Data Source=photosync.db";
     var sqlite = new SqliteConnectionStringBuilder(connectionString);
@@ -57,8 +56,6 @@ var app = builder.Build();
 app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
-    // The Bacus proxy terminates TLS. Promote only the explicitly configured
-    // public HTTPS origin, never an arbitrary forwarded header.
     if (!context.Request.IsHttps && PhotoSync.Server.Portal.PortalSetup.IsSecurePortalRequest(context, app.Configuration))
         context.Request.Scheme = Uri.UriSchemeHttps;
     await next(context);
@@ -85,6 +82,7 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>();
     await DeviceSecuritySchema.InitializeAsync(dbContext);
+    await FamilySharingSchema.InitializeAsync(dbContext);
     Directory.CreateDirectory(scope.ServiceProvider.GetRequiredService<StoragePathResolver>().StorageRoot);
 }
 
