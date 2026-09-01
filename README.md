@@ -4,13 +4,13 @@ PhotoSync is a self-hosted, one-way photo and video synchronization system for A
 
 The Android application organizes media into logical folders and uploads it over the local network. The ASP.NET Core server stores the original files in ordinary folders and keeps metadata in SQLite. A successful upload is verified and committed on the server before the client treats the item as synchronized.
 
-> **Status:** MVP under active development. This repository is the canonical source for both the Android client and the server.
+> **Status:** 0.4.0-beta under active development. This repository is the canonical source for both the Android client and the server.
 
-Version 0.3.0-beta adds optional Google account linking to the warm album design.
-Without Google, every installation still has its own private device space. After
-sign-in, devices linked to the same verified Google account share one archive.
-Update **both** server and Android together. See
-[release notes and migration warnings](docs/release-0.3.0.md).
+Version 0.4.0-beta adds family sharing with separate Google accounts, secure email-bound invitation links, per-folder permissions, privacy-safe shared-folder discovery, and immutable archive semantics. Committed original photos and videos are never physically deleted by normal PhotoSync UI/API/jobs; archive actions are logical only.
+
+Each family member signs in with their own Google account. Google proves identity while PhotoSync owns family membership and authorization. Invitations are one-time, expiring, revocable and bound to the exact verified Google email. This release does not require an SMTP/email server: the owner creates an invite link and shares it through the Android Share Sheet, Copy Link, or QR code.
+
+Update **both** server and Android together. See [family sharing](docs/family-sharing.md) and the implementation notes in [CODEX_FAMILY_SHARING_IMPLEMENTATION.md](docs/CODEX_FAMILY_SHARING_IMPLEMENTATION.md).
 
 ## Repository layout
 
@@ -34,7 +34,7 @@ Update **both** server and Android together. See
 - [Web portal roles, operator setup and next steps (RU)](docs/web-portal.md)
 - [Bacus Lab container deployment](docs/bacus-deployment.md)
 - [Windows / VirtualBox storage and Google sign-in (RU)](docs/windows-virtualbox-setup.md)
-- [Family accounts and folder permissions (RU)](docs/family-sharing.md) (planned, not implemented)
+- [Family accounts and folder permissions](docs/family-sharing.md)
 
 ## Run the server
 
@@ -55,7 +55,9 @@ Requirements: JDK 17 (build tested with Corretto 17), Android SDK 34.
 ./gradlew.bat :android:app:assembleDebug
 ```
 
-Configure the server address in the application settings when running on a physical device. The compile-time default is intended only for local development.
+A public update APK must be signed with the same permanent PhotoSync release certificate as previous public releases. The signing material is intentionally kept outside Git.
+
+Configure the server address in the application settings when running on a physical device. The compile-time default is `https://photosync.bacus.dev`.
 
 ## Tests
 
@@ -64,14 +66,15 @@ dotnet test server/PhotoSync.Server.slnx
 ./gradlew.bat :android:app:testDebugUnitTest
 ```
 
-## Sync guarantees
+## Sync and privacy guarantees
 
 - Android is the upload source of truth.
 - Synchronization is one-way: Android to server.
-- Server files are never deleted automatically.
+- Committed server originals are never physically deleted by normal product flows.
+- Archive/removal actions only hide or revoke metadata/access; they do not remove original media from disk.
 - Upload completion means the server has verified and committed the file.
 - Data endpoints require a per-installation secret plus device ID. ID alone is not a password.
-- Google sign-in and same-account device linking are implemented. Linking does not
-  recover archives created by an older, already-lost device key; family sharing,
-  background folder watching and operator-assisted recovery remain planned.
-- Enrollment accepts new devices automatically up to the configured cap (5 by default). Initial storage and request limits are implemented; internet hosting still requires TLS, operator credentials, trusted proxy setup and operational checks. Invitation-based enrollment is planned.
+- Google sign-in links identity; PhotoSync authorization controls family and folder access.
+- Family membership alone does not expose another member's private folders.
+- Folder sharing supports Private, WholeFamily, and SelectedPeople with View/Contribute/Owner semantics.
+- Enrollment accepts new devices automatically up to the configured cap (5 by default). Initial storage and request limits are implemented; internet hosting still requires TLS, operator credentials, trusted proxy setup and operational checks.
