@@ -44,20 +44,61 @@ public sealed class PortalTests
     }
 
     [Fact]
-    public async Task InitialSetupStatus_DoesNotOfferLoginUntilAccountAndHttpsAreReady()
+    public async Task InitialSetupStatus_OffersGoogleOnHttps_AndPasswordOnlyAfterAccountExists()
     {
         await using var factory = new TestPhotoSyncFactory();
         using var secure = Client(factory);
         var initial = await secure.GetFromJsonAsync<JsonElement>("/api/portal/status");
-        Assert.False(initial.GetProperty("loginAvailable").GetBoolean());
+        Assert.True(initial.GetProperty("loginAvailable").GetBoolean());
+        Assert.True(initial.GetProperty("googleLoginAvailable").GetBoolean());
+        Assert.False(initial.GetProperty("passwordLoginAvailable").GetBoolean());
         await User(factory, "owner", "SuperAdmin");
         var ready = await secure.GetFromJsonAsync<JsonElement>("/api/portal/status");
         Assert.True(ready.GetProperty("loginAvailable").GetBoolean());
+        Assert.True(ready.GetProperty("passwordLoginAvailable").GetBoolean());
         using var plain = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
         var untrusted = await plain.GetFromJsonAsync<JsonElement>("/api/portal/status");
         Assert.False(untrusted.GetProperty("loginAvailable").GetBoolean());
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await plain.GetAsync("/api/portal/csrf")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await plain.GetAsync("/api/portal/admin/dashboard")).StatusCode);
+    }
+
+    [Fact]
+    public async Task GooglePortalLogin_LinksVerifiedDevices_AndBootstrapsOnlyExistingSingleOwner()
+    {
+        await using var factory = new TestPhotoSyncFactory(googleVerifier: new PortalGoogleVerifier());
+        using var ownerPhone = Client(factory); using var ownerPortal = Client(factory);
+        using var strangerPortal = Client(factory); using var memberPhone = Client(factory); using var memberPortal = Client(factory);
+
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await strangerPortal.PostAsJsonAsync("/api/portal/google-login", new { idToken = "stranger" })).StatusCode);
+        await Csrf(strangerPortal);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await strangerPortal.PostAsJsonAsync("/api/portal/google-login", new { idToken = "stranger" })).StatusCode);
+
+        var ownerDevice = await RegisterGoogleDevice(ownerPhone, 'a', "owner");
+        await Csrf(ownerPortal);
+        var ownerLogin = await ownerPortal.PostAsJsonAsync("/api/portal/google-login", new { idToken = "owner" });
+        ownerLogin.EnsureSuccessStatusCode();
+        var cookie = ownerLogin.Headers.GetValues("Set-Cookie").Single(x => x.StartsWith("__Host-PhotoSyncPortal="));
+        Assert.Contains("secure", cookie); Assert.Contains("httponly", cookie); Assert.Contains("samesite=strict", cookie);
+        var owner = await ownerPortal.GetFromJsonAsync<JsonElement>("/api/portal/me");
+        Assert.Contains("SuperAdmin", owner.GetProperty("roles").EnumerateArray().Select(x => x.GetString()));
+        Assert.False(owner.GetProperty("hasPassword").GetBoolean());
+        Assert.Single((await ownerPortal.GetFromJsonAsync<JsonElement>("/api/portal/dashboard")).GetProperty("devices").EnumerateArray());
+
+        var memberDevice = await RegisterGoogleDevice(memberPhone, 'b', "member");
+        await Csrf(memberPortal);
+        (await memberPortal.PostAsJsonAsync("/api/portal/google-login", new { idToken = "member" })).EnsureSuccessStatusCode();
+        var member = await memberPortal.GetFromJsonAsync<JsonElement>("/api/portal/me");
+        Assert.Equal(new[] { "User" }, member.GetProperty("roles").EnumerateArray().Select(x => x.GetString()).ToArray());
+        Assert.Equal(memberDevice, Assert.Single((await memberPortal.GetFromJsonAsync<JsonElement>("/api/portal/dashboard"))
+            .GetProperty("devices").EnumerateArray()).GetProperty("id").GetInt32());
+        Assert.Equal(HttpStatusCode.Forbidden, (await memberPortal.GetAsync("/api/portal/admin/dashboard")).StatusCode);
+
+        var admin = await ownerPortal.GetFromJsonAsync<JsonElement>("/api/portal/admin/dashboard");
+        Assert.Equal(2, admin.GetProperty("deviceCount").GetInt32());
+        Assert.Contains(admin.GetProperty("devices").EnumerateArray(), x => x.GetProperty("id").GetInt32() == ownerDevice);
     }
 
     [Fact]
@@ -172,5 +213,28 @@ public sealed class PortalTests
         await Login(user, "alice");
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/api/portal/admin/users")).StatusCode);
         Assert.Single((await owner.GetFromJsonAsync<JsonElement>("/api/portal/admin/audit")).EnumerateArray());
+    }
+
+    private static async Task<int> RegisterGoogleDevice(HttpClient client, char secret, string token)
+    {
+        var uuid = Guid.NewGuid();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", new string(secret, 64));
+        client.DefaultRequestHeaders.Add("X-PhotoSync-Device", uuid.ToString());
+        var registration = await client.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(uuid, "Phone", "0.3.0"));
+        registration.EnsureSuccessStatusCode();
+        (await client.PostAsJsonAsync("/api/auth/google/sign-in", new { id_token = token })).EnsureSuccessStatusCode();
+        return (await registration.Content.ReadFromJsonAsync<RegisterDeviceResponse>())!.DeviceId;
+    }
+
+    private sealed class PortalGoogleVerifier : PhotoSync.Server.Security.IGoogleTokenVerifier
+    {
+        public Task<PhotoSync.Server.Security.VerifiedGoogleIdentity?> VerifyAsync(string idToken, CancellationToken cancellationToken)
+            => Task.FromResult<PhotoSync.Server.Security.VerifiedGoogleIdentity?>(idToken switch
+            {
+                "owner" => new("owner-subject", "owner@example.test", "Owner"),
+                "member" => new("member-subject", "member@example.test", "Member"),
+                "stranger" => new("stranger-subject", "stranger@example.test", "Stranger"),
+                _ => null
+            });
     }
 }

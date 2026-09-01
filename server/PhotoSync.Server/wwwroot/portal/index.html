@@ -3,17 +3,20 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow"><title>PhotoSync — домашний архив</title>
-  <link rel="stylesheet" href="/portal/style.css"><script src="/portal/app.js" defer></script>
+  <link rel="stylesheet" href="/portal/style.css">
+  <script src="https://accounts.google.com/gsi/client?hl=ru" async defer></script><script src="/portal/app.js" defer></script>
 </head>
 <body>
   <header><a class="brand" href="/portal/" aria-label="PhotoSync — главная"><span aria-hidden="true">▧</span> PhotoSync</a><span class="signature">BACUS LAB / HOME ARCHIVE</span><button id="logout" hidden>Выйти</button></header>
   <main>
     <section id="login-view" class="login-layout">
       <div class="intro"><span class="eyebrow">Ваш собственный архив</span><h1>Моменты,<br>которые рядом.</h1><p>Фотографии остаются у вас. Здесь можно проверить свои телефоны, посмотреть загрузки и убедиться, что воспоминания на месте.</p><div class="album-art" aria-hidden="true"><span>Наши воспоминания</span><i>PhotoSync</i></div></div>
-      <div class="login-panel"><span class="eyebrow">Личный кабинет</span><h2>С возвращением.</h2><p>Вход для пользователя и администратора. Доступные разделы определяются вашей ролью.</p>
+      <div class="login-panel"><span class="eyebrow">Личный кабинет</span><h2>С возвращением.</h2><p>Войдите с тем же Google-аккаунтом, который подключён в PhotoSync на телефоне. Сервер сам найдёт ваши устройства.</p>
         <p id="setup-notice" role="status" hidden>Сервер запущен и готов принимать фотографии с Android. Вход в кабинет откроется после настройки владельцем аккаунта и защищённого соединения. В приложении укажите адрес этого сайта.</p>
+        <div id="google-login"><div id="google-button" aria-label="Войти через Google"></div><p class="small">Google подтверждает личность, а фотографии остаются на вашем PhotoSync Server.</p></div>
+        <div id="login-divider" class="divider"><span>или резервный вход</span></div>
         <form id="login-form"><label>Имя пользователя<input name="userName" autocomplete="username" maxlength="100" required></label><label>Пароль<input name="password" type="password" autocomplete="current-password" maxlength="256" required></label><button class="primary" type="submit">Открыть мой архив →</button></form>
-        <p class="small">Аккаунт выдаёт владелец сервера. Телефон может загружать фотографии без аккаунта; чтобы увидеть его в кабинете, владелец должен подтвердить и назначить устройство.</p><p class="small">Google-вход и семейный доступ пока не подключены.</p>
+        <p class="small">Первый вход разрешён только аккаунту, уже подтверждённому в Android-приложении. Семейные приглашения и доступ к отдельным папкам появятся позже.</p>
       </div>
     </section>
     <section id="workspace" hidden>
@@ -25,7 +28,7 @@
         <form id="assign-device"><h2>Подключить к аккаунту</h2><label>Свободное устройство<select name="deviceId" id="device-choice" required></select></label><label>Пользователь<select name="userId" id="user-choice" required></select></label><label class="confirmation"><input name="confirmed" type="checkbox" required>Я проверил владельца телефона и его идентификатор. Это даст аккаунту доступ ко всем фотографиям устройства.</label><button class="primary" type="submit">Подтвердить владельца</button></form></div></section>
         <h2>Журнал управления</h2><div id="audit" class="file-list"></div>
       </div>
-      <details class="password-panel"><summary>Изменить мой пароль</summary><form id="password-form"><label>Текущий пароль<input name="currentPassword" type="password" required autocomplete="current-password"></label><label>Новый пароль<input name="newPassword" type="password" minlength="12" maxlength="256" required autocomplete="new-password"></label><button type="submit">Изменить пароль и выйти</button></form></details>
+      <details id="password-panel" class="password-panel"><summary>Изменить мой пароль</summary><form id="password-form"><label>Текущий пароль<input name="currentPassword" type="password" required autocomplete="current-password"></label><label>Новый пароль<input name="newPassword" type="password" minlength="12" maxlength="256" required autocomplete="new-password"></label><button type="submit">Изменить пароль и выйти</button></form></details>
     </section>
     <p id="message" role="status" aria-live="polite"></p>
   </main><footer><span>PhotoSync · домашний архив</span><a href="https://bacus.dev/projects/photosync/">Об Android-приложении ↗</a></footer>

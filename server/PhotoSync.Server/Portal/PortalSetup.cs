@@ -88,7 +88,7 @@ public static class PortalSetup
     {
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
-        await sp.GetRequiredService<PortalDbContext>().Database.EnsureCreatedAsync();
+        await PortalSchema.InitializeAsync(sp.GetRequiredService<PortalDbContext>());
         var roles = sp.GetRequiredService<RoleManager<IdentityRole>>();
         foreach (var role in new[] { "User", "ServerAdmin", "SuperAdmin" })
             if (!await roles.RoleExistsAsync(role)) Ensure(await roles.CreateAsync(new IdentityRole(role)));

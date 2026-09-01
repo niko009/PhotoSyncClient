@@ -1,9 +1,10 @@
 # PhotoSync web: пользователь, администратор, владелец
 
-Состояние на 2026-08-31: первый рабочий срез реализован и развёрнут на Ubuntu.
+Состояние на 2026-09-01: Google-вход и ролевой кабинет реализованы и развёрнуты на Ubuntu.
 Пользователь подтвердил `https://photosync.bacus.dev` и запуск на Ubuntu.
 Публикация выполнена через Bacus Agent; API загрузки и сохранность после обновления
-проверены. Веб-вход ожидает приватной настройки владельца и trusted proxy.
+проверены. Первичный владелец определяется по единственному Google-аккаунту,
+который уже подтверждён Android-устройством на этом сервере.
 Результат и ограничения зафиксированы в bacus-deployment.md.
 
 ## Продукт и внешний вид
@@ -14,7 +15,7 @@
 
 | Роль | Возможности первого выпуска |
 | --- | --- |
-| User | Назначенные ему телефоны, альбомы, последние 100 загрузок, скачивание собственных оригиналов, смена пароля |
+| User | Связанные с его Google `sub` телефоны, альбомы, последние 100 загрузок и скачивание собственных оригиналов |
 | ServerAdmin | Статистика всех устройств, последний контакт, объём данных, состояние базы/диска, журнал управления |
 | SuperAdmin | Всё выше, создание пользователей/ServerAdmin и подтверждённое назначение свободных телефонов аккаунтам |
 
@@ -110,7 +111,7 @@ Windows недоступен; образ успешно собран и запу
 
 ## Проверки
 
-30 серверных integration/unit tests прошли: изоляция телефонов и пользователей,
+31 серверный integration/unit test прошёл: изоляция телефонов и пользователей,
 роли, CSRF, защищённая cookie, отзыв сессий, блокировка входа, назначение устройства,
 скачивание только владельцем, лимиты устройств/файлов/места и прежний upload API.
 Release publish и JavaScript syntax check прошли. В браузере проверены страница
@@ -137,6 +138,23 @@ If the OAuth consent screen is in Testing mode, add each Google account that wil
 test PhotoSync. Android Credential Manager, server-side ID-token validation and
 device linking are implemented in 0.3.0-beta. The server validates the token
 audience against the Web Client ID and stores only Google `sub`, verified email
-and display name; it does not store the ID token or a Google access token. This
-does not yet add Google login to the web portal and does not implement family
-invitations or per-folder ACLs.
+and display name; it does not store the ID token or a Google access token.
+
+The web portal uses the same Web Client ID and Google Identity Services button.
+Google Cloud must list `https://photosync.bacus.dev` under **Authorized JavaScript
+origins** for that client. The popup/callback flow does not use a redirect URI or
+client secret. The browser sends the returned ID token to PhotoSync over HTTPS;
+the server validates it again and creates its own Secure, HttpOnly portal session.
+
+Portal enrollment is intentionally closed:
+
+- a new Google portal account is accepted only if the same verified `sub` is
+  already linked to an Android device on this server;
+- when the portal database is empty, SuperAdmin bootstrap succeeds only if exactly
+  one distinct Google subject is already present among linked devices;
+- if several subjects exist before bootstrap, the server refuses to guess the
+  owner and requires private operator setup;
+- later linked Google accounts receive `User`; matching devices are assigned
+  automatically, while existing ownership is never silently transferred.
+
+Family invitations and per-folder ACLs are not implemented yet.

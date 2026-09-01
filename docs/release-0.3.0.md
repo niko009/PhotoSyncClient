@@ -7,6 +7,7 @@
 - необязательный вход Google через Android Credential Manager;
 - серверная проверка Google ID token для Web OAuth Client ID;
 - объединённый архив нескольких телефонов одного Google-аккаунта;
+- Google-вход в веб-портал с автоматической связью тех же устройств;
 - без Google приложение продолжает работать в приватном пространстве установки;
 - выход из Google отвязывает только текущий телефон;
 - тёплый семейный интерфейс 0.2 сохранён и дополнен блоком аккаунта;
@@ -34,10 +35,10 @@ APK SHA-256:
 
 ## Проверки
 
-- 30 серверных integration/unit tests;
+- 31 серверный integration/unit test;
 - Android debug assemble и unit tests;
 - release APK assemble и APK Signature Scheme v2 verification;
 - release server publish.
 
-Family sharing, folder ACLs, Google-вход в веб-портал и автоматический перенос
-потерянных пространств в этот выпуск не входят.
+Family sharing, folder ACLs и автоматический перенос потерянных пространств в
+этот выпуск не входят.

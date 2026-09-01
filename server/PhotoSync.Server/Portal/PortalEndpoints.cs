@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PhotoSync.Server.Data;
 using PhotoSync.Server.Options;
+using PhotoSync.Server.Security;
 using PhotoSync.Server.Services;
 
 namespace PhotoSync.Server.Portal;
@@ -16,8 +17,19 @@ public static class PortalEndpoints
     {
         app.MapGet("/", () => Results.Redirect("/portal/")).AllowAnonymous();
         app.MapGet("/portal/", (IWebHostEnvironment env) => Results.File(Path.Combine(env.WebRootPath, "portal", "index.html"), "text/html")).AllowAnonymous();
-        app.MapGet("/api/portal/status", async (HttpContext context, PortalDbContext db) =>
-            Results.Ok(new { loginAvailable = context.Request.IsHttps && await db.Users.AnyAsync() })).AllowAnonymous();
+        app.MapGet("/api/portal/status", async (HttpContext context, PortalDbContext db, IOptions<GoogleAuthOptions> google) =>
+        {
+            var secure = context.Request.IsHttps;
+            var passwordLogin = secure && await db.Users.AnyAsync();
+            var googleLogin = secure && !string.IsNullOrWhiteSpace(google.Value.ClientId);
+            return Results.Ok(new
+            {
+                loginAvailable = passwordLogin || googleLogin,
+                passwordLoginAvailable = passwordLogin,
+                googleLoginAvailable = googleLogin,
+                googleClientId = googleLogin ? google.Value.ClientId : null
+            });
+        }).AllowAnonymous();
         app.MapGet("/api/portal/csrf", async (HttpContext context, IAntiforgery csrf) =>
         {
             if (!context.Request.IsHttps)
@@ -49,9 +61,82 @@ public static class PortalEndpoints
                 return Results.Unauthorized();
             }
             await users.ResetAccessFailedCountAsync(user);
-            var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, user.Id), new(ClaimTypes.Name, user.UserName!), new("security_stamp", user.SecurityStamp!) };
-            claims.AddRange((await users.GetRolesAsync(user)).Select(role => new Claim(ClaimTypes.Role, role)));
-            await context.SignInAsync(PortalSetup.Scheme, new ClaimsPrincipal(new ClaimsIdentity(claims, PortalSetup.Scheme)));
+            await SignInAsync(context, users, user);
+            return Results.Ok(new { ok = true });
+        }).AllowAnonymous().RequireRateLimiting("portal-login");
+
+        portal.MapPost("/google-login", async (GoogleLoginRequest request, IGoogleTokenVerifier verifier,
+            UserManager<PortalUser> users, PortalDbContext portalDb, PhotoSyncDbContext media,
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.IdToken) || request.IdToken.Length > 16_384)
+                return Results.BadRequest(new { error = "invalid_google_token" });
+            var identity = await verifier.VerifyAsync(request.IdToken, cancellationToken);
+            if (identity is null) return Results.Unauthorized();
+
+            var user = await users.Users.SingleOrDefaultAsync(x => x.GoogleSubject == identity.Subject, cancellationToken);
+            var linkedDeviceIds = await media.Devices.IgnoreQueryFilters().AsNoTracking()
+                .Where(x => x.GoogleSubject == identity.Subject)
+                .Select(x => x.Id).ToListAsync(cancellationToken);
+            if (user is null && linkedDeviceIds.Count == 0)
+                return Results.Json(new { error = "google_device_not_linked" }, statusCode: StatusCodes.Status403Forbidden);
+
+            if (user is null)
+            {
+                var hasPortalUsers = await users.Users.AnyAsync(cancellationToken);
+                var role = "User";
+                if (!hasPortalUsers)
+                {
+                    var linkedSubjects = await media.Devices.IgnoreQueryFilters().AsNoTracking()
+                        .Where(x => x.GoogleSubject != null)
+                        .Select(x => x.GoogleSubject!).Distinct().Take(2).ToListAsync(cancellationToken);
+                    if (linkedSubjects.Count != 1 || linkedSubjects[0] != identity.Subject)
+                        return Results.Conflict(new { error = "google_owner_setup_ambiguous" });
+                    role = "SuperAdmin";
+                }
+
+                user = new PortalUser
+                {
+                    UserName = identity.Email,
+                    Email = identity.Email,
+                    EmailConfirmed = true,
+                    GoogleSubject = identity.Subject,
+                    DisplayName = identity.DisplayName
+                };
+                var created = await users.CreateAsync(user);
+                if (!created.Succeeded)
+                    return Results.Conflict(new { error = "google_account_conflict" });
+                var assignedRole = await users.AddToRoleAsync(user, role);
+                if (!assignedRole.Succeeded)
+                {
+                    await users.DeleteAsync(user);
+                    return Results.Problem("Could not assign portal role.");
+                }
+                portalDb.Audit.Add(new PortalAudit
+                {
+                    ActorId = user.Id,
+                    Action = role == "SuperAdmin" ? "google_owner_bootstrap" : "google_user_created",
+                    Target = user.Id
+                });
+            }
+            else
+            {
+                user.Email = identity.Email;
+                user.EmailConfirmed = true;
+                user.DisplayName = identity.DisplayName;
+                var updated = await users.UpdateAsync(user);
+                if (!updated.Succeeded) return Results.Problem("Could not update Google account.");
+            }
+
+            var ownedIds = await portalDb.DeviceOwners.Where(x => linkedDeviceIds.Contains(x.DeviceId))
+                .Select(x => x.DeviceId).ToListAsync(cancellationToken);
+            var newlyLinked = linkedDeviceIds.Except(ownedIds).ToArray();
+            portalDb.DeviceOwners.AddRange(newlyLinked.Select(id => new DeviceOwnership { DeviceId = id, UserId = user.Id }));
+            if (newlyLinked.Length > 0)
+                portalDb.Audit.Add(new PortalAudit { ActorId = user.Id, Action = "google_devices_linked", Target = newlyLinked.Length.ToString() });
+            await portalDb.SaveChangesAsync(cancellationToken);
+
+            await SignInAsync(context, users, user);
             return Results.Ok(new { ok = true });
         }).AllowAnonymous().RequireRateLimiting("portal-login");
 
@@ -60,11 +145,17 @@ public static class PortalEndpoints
             await context.SignOutAsync(PortalSetup.Scheme);
             return Results.Ok(new { ok = true });
         });
-        portal.MapGet("/me", (HttpContext context) => Results.Ok(new
+        portal.MapGet("/me", async (HttpContext context, UserManager<PortalUser> users) =>
         {
-            name = context.User.Identity!.Name,
-            roles = context.User.FindAll(ClaimTypes.Role).Select(x => x.Value)
-        }));
+            var user = (await users.GetUserAsync(context.User))!;
+            return Results.Ok(new
+            {
+                name = user.DisplayName ?? user.UserName,
+                email = user.Email,
+                hasPassword = await users.HasPasswordAsync(user),
+                roles = context.User.FindAll(ClaimTypes.Role).Select(x => x.Value)
+            });
+        });
         portal.MapPost("/password", async (PasswordRequest request, HttpContext context, UserManager<PortalUser> users) =>
         {
             if (string.IsNullOrEmpty(request.NewPassword) || request.NewPassword.Length > 256 || string.IsNullOrEmpty(request.CurrentPassword)) return Results.BadRequest(new { error = "invalid_password" });
@@ -163,7 +254,21 @@ public static class PortalEndpoints
         await db.SaveChangesAsync();
     }
 
+    private static async Task SignInAsync(HttpContext context, UserManager<PortalUser> users, PortalUser user)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id),
+            new(ClaimTypes.Name, user.DisplayName ?? user.UserName!),
+            new("security_stamp", user.SecurityStamp!)
+        };
+        claims.AddRange((await users.GetRolesAsync(user)).Select(role => new Claim(ClaimTypes.Role, role)));
+        await context.SignInAsync(PortalSetup.Scheme,
+            new ClaimsPrincipal(new ClaimsIdentity(claims, PortalSetup.Scheme)));
+    }
+
     public sealed record LoginRequest(string UserName, string Password);
+    public sealed record GoogleLoginRequest(string IdToken);
     public sealed record PasswordRequest(string CurrentPassword, string NewPassword);
     public sealed record CreateUserRequest(string UserName, string Password, string Role);
     public sealed record AssignDeviceRequest(string UserId);

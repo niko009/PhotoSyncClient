@@ -7,7 +7,7 @@ function element(tag, text, className) { const node = document.createElement(tag
 async function api(path, body) {
   if (body !== undefined && !csrf) await getCsrf();
   const response = await fetch('/api/portal' + path, { credentials:'same-origin', method:body === undefined ? 'GET':'POST', headers:body === undefined ? {} : {'Content-Type':'application/json','X-PhotoSync-CSRF':csrf}, body:body === undefined ? undefined : JSON.stringify(body) });
-  if (!response.ok) { const error = new Error(response.status === 401 ? 'Не удалось войти. Проверьте имя и пароль; после нескольких попыток вход временно блокируется.' : response.status === 403 ? 'Недостаточно прав.' : response.status === 429 ? 'Слишком много попыток. Подождите минуту.' : response.status === 409 ? 'Устройство уже назначено аккаунту.' : 'Операция не выполнена. Проверьте данные и повторите попытку.'); error.status = response.status; throw error; }
+  if (!response.ok) { let code='';try{code=(await response.json()).error||'';}catch{}const messages={google_device_not_linked:'Сначала войдите в этот Google-аккаунт в PhotoSync на телефоне.',google_owner_setup_ambiguous:'На сервере найдено несколько Google-аккаунтов. Первого владельца нужно назначить вручную.',google_account_conflict:'Этот Google-аккаунт конфликтует с существующим кабинетом.'};const error = new Error(messages[code] || (response.status === 401 ? 'Не удалось войти. Проверьте данные аккаунта.' : response.status === 403 ? 'Недостаточно прав.' : response.status === 429 ? 'Слишком много попыток. Подождите минуту.' : response.status === 409 ? 'Операция конфликтует с существующими данными.' : 'Операция не выполнена. Проверьте данные и повторите попытку.')); error.status = response.status; throw error; }
   return response.json();
 }
 async function getCsrf() { csrf = (await api('/csrf')).token; }
@@ -40,7 +40,7 @@ async function session() {
   $('login-view').hidden=!!me;$('workspace').hidden=!me;$('logout').hidden=!me;
   if(!me)return;
   $('welcome').textContent=me.name+' · мой архив';$('account-role').textContent=me.roles.includes('SuperAdmin')?'Владелец сервера':me.roles.includes('ServerAdmin')?'Администратор сервера':'Личный кабинет';
-  $('admin-tab').hidden=!me.roles.some(r=>r==='SuperAdmin'||r==='ServerAdmin');await getCsrf();await refresh();
+  $('admin-tab').hidden=!me.roles.some(r=>r==='SuperAdmin'||r==='ServerAdmin');$('password-panel').hidden=!me.hasPassword;await getCsrf();await refresh();
 }
 function submit(id, action) { $(id).addEventListener('submit',async event=>{event.preventDefault();const button=event.currentTarget.querySelector('button');button.disabled=true;message('');try{await action(Object.fromEntries(new FormData(event.currentTarget)));}catch(error){message(error.message);}finally{button.disabled=false;}}); }
 submit('login-form',async data=>{await api('/login',data);$('login-form').reset();csrf='';await session();});
@@ -50,10 +50,15 @@ submit('password-form',async data=>{await api('/password',data);$('password-form
 $('logout').addEventListener('click',async()=>{try{await api('/logout',{});csrf='';me=null;adminMode=false;$('user-view').hidden=false;$('admin-view').hidden=true;$('user-tab').setAttribute('aria-pressed','true');$('admin-tab').setAttribute('aria-pressed','false');await session();}catch(error){message(error.message);}});
 for(const [id,isAdmin] of [['user-tab',false],['admin-tab',true]])$(id).addEventListener('click',async()=>{adminMode=isAdmin;$('user-view').hidden=isAdmin;$('admin-view').hidden=!isAdmin;$('user-tab').setAttribute('aria-pressed',String(!isAdmin));$('admin-tab').setAttribute('aria-pressed',String(isAdmin));try{await refresh();}catch(error){message(error.message);}});
 $('refresh').addEventListener('click',()=>refresh().catch(error=>message(error.message)));
+async function waitForGoogle() { for(let i=0;i<100;i++){if(window.google?.accounts?.id)return window.google;await new Promise(resolve=>setTimeout(resolve,100));}throw new Error('Google-вход не загрузился. Проверьте соединение и обновите страницу.'); }
+async function renderGoogle(clientId) { const google=await waitForGoogle();google.accounts.id.initialize({client_id:clientId,callback:async response=>{message('');try{await api('/google-login',{idToken:response.credential});csrf='';await session();}catch(error){message(error.message);}}});google.accounts.id.renderButton($('google-button'),{theme:'outline',size:'large',shape:'pill',text:'continue_with',width:Math.min(360,$('google-button').clientWidth||360)}); }
 async function start() {
   const status = await api('/status');
   $('setup-notice').hidden = status.loginAvailable;
-  $('login-form').hidden = !status.loginAvailable;
+  $('google-login').hidden = !status.googleLoginAvailable;
+  $('login-form').hidden = !status.passwordLoginAvailable;
+  $('login-divider').hidden = !(status.googleLoginAvailable && status.passwordLoginAvailable);
   if (status.loginAvailable) await session();
+  if (status.googleLoginAvailable && !me) renderGoogle(status.googleClientId).catch(error=>message(error.message));
 }
 start().catch(error=>message(error.message));

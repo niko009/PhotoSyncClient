@@ -4,7 +4,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace PhotoSync.Server.Portal;
 
-public sealed class PortalUser : IdentityUser;
+public sealed class PortalUser : IdentityUser
+{
+    public string? GoogleSubject { get; set; }
+    public string? DisplayName { get; set; }
+}
 
 public sealed class DeviceOwnership
 {
@@ -31,6 +35,12 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options)
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.Entity<PortalUser>(entity =>
+        {
+            entity.Property(x => x.GoogleSubject).HasMaxLength(255);
+            entity.Property(x => x.DisplayName).HasMaxLength(200);
+            entity.HasIndex(x => x.GoogleSubject).IsUnique();
+        });
         builder.Entity<DeviceOwnership>().HasKey(x => x.DeviceId);
         builder.Entity<DeviceOwnership>().HasOne<PortalUser>().WithMany().HasForeignKey(x => x.UserId);
         builder.Entity<PortalAudit>().HasKey(x => x.Id);
