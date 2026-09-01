@@ -38,13 +38,13 @@ public static class FamilyEndpoints
                 x.Role.ToString(), x.UserId == current.UserId))
             .ToListAsync(ct);
 
-        var invites = current.Role == FamilyRole.Owner
+        IReadOnlyList<FamilyInviteResponse> invites = current.Role == FamilyRole.Owner
             ? await db.FamilyInvitations.AsNoTracking()
                 .Where(x => x.FamilyId == current.FamilyId && x.AcceptedAtUtc == null && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTimeOffset.UtcNow)
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .Select(x => new FamilyInviteResponse(x.Id, x.ExpectedEmail, x.ExpiresAtUtc, "Pending", null))
                 .ToListAsync(ct)
-            : [];
+            : Array.Empty<FamilyInviteResponse>();
 
         var family = await db.Families.AsNoTracking().SingleAsync(x => x.Id == current.FamilyId, ct);
         return Results.Ok(new FamilyResponse(family.Id, family.Name, current.Role.ToString(), members, invites));
@@ -59,21 +59,24 @@ public static class FamilyEndpoints
 
         var email = NormalizeEmail(request.Email);
         if (!IsValidEmail(email)) return Results.BadRequest(new { error = "invalid_email" });
-        if (email == current.User.GoogleEmail) return Results.BadRequest(new { error = "cannot_invite_self" });
+        if (email == NormalizeEmail(current.User.GoogleEmail)) return Results.BadRequest(new { error = "cannot_invite_self" });
 
         var alreadyMember = await db.FamilyMembers.AsNoTracking()
-            .AnyAsync(x => x.FamilyId == current.FamilyId && x.IsActive && x.User.GoogleEmail == email, ct);
+            .AnyAsync(x => x.FamilyId == current.FamilyId && x.IsActive && x.User.GoogleEmail.ToLower() == email, ct);
         if (alreadyMember) return Results.Conflict(new { error = "already_member" });
 
+        var pending = await db.FamilyInvitations.AsNoTracking().AnyAsync(x => x.FamilyId == current.FamilyId &&
+            x.ExpectedEmail == email && x.AcceptedAtUtc == null && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTimeOffset.UtcNow, ct);
+        if (pending) return Results.Conflict(new { error = "invite_already_pending" });
+
         var rawToken = Base64Url(RandomNumberGenerator.GetBytes(32));
-        var tokenHash = HashToken(rawToken);
         var now = DateTimeOffset.UtcNow;
         var invite = new FamilyInvitationEntity
         {
             FamilyId = current.FamilyId,
             InvitedByUserId = current.UserId,
             ExpectedEmail = email,
-            TokenHash = tokenHash,
+            TokenHash = HashToken(rawToken),
             CreatedAtUtc = now,
             ExpiresAtUtc = now + InviteLifetime
         };
@@ -82,8 +85,7 @@ public static class FamilyEndpoints
 
         var origin = configuration["Portal:PublicOrigin"]?.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(origin)) origin = $"{context.Request.Scheme}://{context.Request.Host}";
-        var url = $"{origin}/join/{rawToken}";
-        return Results.Ok(new FamilyInviteResponse(invite.Id, invite.ExpectedEmail, invite.ExpiresAtUtc, "Pending", url));
+        return Results.Ok(new FamilyInviteResponse(invite.Id, invite.ExpectedEmail, invite.ExpiresAtUtc, "Pending", $"{origin}/join/{rawToken}"));
     }
 
     private static async Task<IResult> RevokeInviteAsync(int inviteId, HttpContext context, PhotoSyncDbContext db, CancellationToken ct)
@@ -113,9 +115,8 @@ public static class FamilyEndpoints
         var user = await db.Users.SingleOrDefaultAsync(x => x.Id == currentUserId.Value, ct);
         if (user is null || !string.Equals(user.GoogleSubject, identity.Subject, StringComparison.Ordinal)) return Results.Unauthorized();
 
-        var hash = HashToken(token);
         await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
-        var invite = await db.FamilyInvitations.SingleOrDefaultAsync(x => x.TokenHash == hash, ct);
+        var invite = await db.FamilyInvitations.SingleOrDefaultAsync(x => x.TokenHash == HashToken(token), ct);
         if (invite is null) return Results.NotFound();
         var now = DateTimeOffset.UtcNow;
         if (invite.RevokedAtUtc is not null) return Results.Conflict(new { error = "invite_revoked" });
@@ -129,9 +130,12 @@ public static class FamilyEndpoints
         var membership = await db.FamilyMembers.SingleOrDefaultAsync(x => x.UserId == user.Id, ct);
         if (membership is not null && membership.FamilyId != invite.FamilyId)
         {
-            var oldFamilyMemberCount = await db.FamilyMembers.CountAsync(x => x.FamilyId == membership.FamilyId && x.IsActive, ct);
-            if (membership.Role != FamilyRole.Owner || oldFamilyMemberCount != 1)
-                return Results.Conflict(new { error = "already_in_another_family" });
+            if (membership.IsActive)
+            {
+                var oldFamilyMemberCount = await db.FamilyMembers.CountAsync(x => x.FamilyId == membership.FamilyId && x.IsActive, ct);
+                if (membership.Role != FamilyRole.Owner || oldFamilyMemberCount != 1)
+                    return Results.Conflict(new { error = "already_in_another_family" });
+            }
             membership.FamilyId = invite.FamilyId;
             membership.Role = FamilyRole.Member;
             membership.IsActive = true;
@@ -151,6 +155,7 @@ public static class FamilyEndpoints
         }
         else
         {
+            membership.Role = membership.Role == FamilyRole.Owner ? FamilyRole.Owner : FamilyRole.Member;
             membership.IsActive = true;
             membership.RemovedAtUtc = null;
         }
