@@ -21,7 +21,7 @@ import com.photosync.android.ui.components.*
 @Composable
 fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: (String) -> Unit,
     onSaveGlobalPolicy: (PhotoCleanupPolicy) -> Unit, onGoogleSignIn: () -> Unit,
-    onGoogleSignOut: () -> Unit, modifier: Modifier = Modifier) {
+    onGoogleSignOut: () -> Unit, onOpenFamily: () -> Unit, modifier: Modifier = Modifier) {
     var serverDraft by rememberSaveable(state.serverUrl) { mutableStateOf(state.serverUrl) }
     var policyDraft by remember(state.globalPolicy) { mutableStateOf(state.globalPolicy) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -65,6 +65,22 @@ fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: 
                     }
                     if (state.googleError) Text(stringResource(R.string.google_sign_in_error),
                         color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            item {
+                AlbumPanel {
+                    Text("Family", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        if (state.googleAccount == null) "Sign in with Google first to manage family sharing."
+                        else "Invite family members and control who can access shared folders.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(
+                        onClick = onOpenFamily,
+                        enabled = state.googleAccount != null,
+                        modifier = Modifier.fillMaxWidth().testTag("open_family"),
+                    ) { Text("Open Family") }
                 }
             }
             item {
@@ -113,7 +129,6 @@ fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: 
                     Text(stringResource(R.string.version_format, BuildConfig.VERSION_NAME))
                     Text(stringResource(R.string.album_by_lab), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(stringResource(R.string.album_language_system), style = MaterialTheme.typography.bodySmall)
-                    Text(stringResource(R.string.album_family_later), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
