@@ -26,6 +26,11 @@ public static class AlbumEndpoints
             .SingleOrDefaultAsync(x => x.DeviceUuid == device_uuid, ct);
         if (device is null) return Results.NotFound(ApiProblems.NotFound("DEVICE_NOT_FOUND", "Device was not found."));
 
+        var ownsDevice = access.CurrentDeviceId == device.Id ||
+            (access.CurrentUserId is int userId && device.UserId == userId);
+        if (!ownsDevice)
+            return Results.NotFound(ApiProblems.NotFound("DEVICE_NOT_FOUND", "Device was not found."));
+
         var candidates = await dbContext.Albums.IgnoreQueryFilters().AsNoTracking()
             .Where(x => x.DeviceId == device.Id && x.ArchivedAtUtc == null)
             .OrderBy(x => x.AlbumName)
@@ -38,12 +43,6 @@ public static class AlbumEndpoints
             visible.Add(new AlbumListItem(album.Id, album.AlbumName,
                 pathResolver.GetAlbumRelativeDirectory(device, album).Replace('\\', '/')));
         }
-
-        var ownsDevice = access.CurrentDeviceId == device.Id ||
-            (access.CurrentUserId is int userId && device.UserId == userId);
-        if (!ownsDevice && visible.Count == 0)
-            return Results.NotFound(ApiProblems.NotFound("DEVICE_NOT_FOUND", "Device was not found."));
-
         return Results.Ok(new AlbumsResponse(visible));
     }
 
@@ -65,8 +64,6 @@ public static class AlbumEndpoints
                 album.SharingMode.ToString(),
                 permission == FolderPermission.Owner));
         }
-        // Deliberately returns no device UUID/name, physical path, owner email,
-        // counters, or storage metadata for another family member.
         return Results.Ok(new AccessibleAlbumsResponse(result));
     }
 
@@ -154,7 +151,6 @@ public static class AlbumEndpoints
         var album = await db.Albums.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == albumId && x.ArchivedAtUtc == null, ct);
         if (album is null || !await access.CanManageAsync(album, ct)) return Results.NotFound();
 
-        // Logical archive only: neither the album directory nor any committed original is removed.
         album.ArchivedAtUtc = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { archived = true, originals_preserved = true });
