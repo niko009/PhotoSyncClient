@@ -14,6 +14,7 @@ public static class AlbumEndpoints
         group.MapGet("/", ListAsync);
         group.MapPost("/", CreateAsync);
         group.MapPut("/{albumId:int}/sharing", UpdateSharingAsync);
+        group.MapPost("/{albumId:int}/archive", ArchiveAsync);
         return group;
     }
 
@@ -36,6 +37,12 @@ public static class AlbumEndpoints
             visible.Add(new AlbumListItem(album.Id, album.AlbumName,
                 pathResolver.GetAlbumRelativeDirectory(device, album).Replace('\\', '/')));
         }
+
+        var ownsDevice = access.CurrentDeviceId == device.Id ||
+            (access.CurrentUserId is int userId && device.UserId == userId);
+        if (!ownsDevice && visible.Count == 0)
+            return Results.NotFound(ApiProblems.NotFound("DEVICE_NOT_FOUND", "Device was not found."));
+
         return Results.Ok(new AlbumsResponse(visible));
     }
 
@@ -116,5 +123,16 @@ public static class AlbumEndpoints
         }
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { album_id = album.Id, mode = album.SharingMode.ToString(), family_permission = album.FamilyPermission.ToString() });
+    }
+
+    private static async Task<IResult> ArchiveAsync(int albumId, PhotoSyncDbContext db, FolderAccessService access, CancellationToken ct)
+    {
+        var album = await db.Albums.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == albumId && x.ArchivedAtUtc == null, ct);
+        if (album is null || !await access.CanManageAsync(album, ct)) return Results.NotFound();
+
+        // Logical archive only: neither the album directory nor any committed original is removed.
+        album.ArchivedAtUtc = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { archived = true, originals_preserved = true });
     }
 }
