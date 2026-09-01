@@ -4,7 +4,9 @@ import android.net.Uri
 import com.photosync.android.domain.model.DashboardStats
 import com.photosync.android.domain.model.FolderDetail
 import com.photosync.android.domain.model.FolderSummary
+import com.photosync.android.domain.model.GoogleAccount
 import com.photosync.android.domain.model.PhotoItem
+import com.photosync.android.domain.model.PhotoCleanupPolicy
 import com.photosync.android.domain.model.PhotoSyncStatus
 import com.photosync.android.domain.repository.PhotoSyncRepository
 import kotlinx.coroutines.flow.Flow
@@ -18,8 +20,29 @@ class FakePhotoSyncRepository(
 
     private val folders = MutableStateFlow(seedFolders)
     private val serverUrl = MutableStateFlow("http://127.0.0.1:5187")
+    private val globalPolicy = MutableStateFlow(PhotoCleanupPolicy.Keep)
+    private val folderPolicies = MutableStateFlow<Map<String, PhotoCleanupPolicy>>(emptyMap())
+    private val googleAccount = MutableStateFlow<GoogleAccount?>(null)
+
+    override fun observeGlobalPhotoCleanupPolicy(): Flow<PhotoCleanupPolicy> = globalPolicy
+    override fun observeFolderPhotoCleanupPolicy(folderId: String): Flow<PhotoCleanupPolicy?> =
+        folderPolicies.map { it[folderId] }
+    override suspend fun updateGlobalPhotoCleanupPolicy(policy: PhotoCleanupPolicy) { globalPolicy.value = policy }
+    override suspend fun updateFolderPhotoCleanupPolicy(folderId: String, policy: PhotoCleanupPolicy?) {
+        folderPolicies.update { current -> if (policy == null) current - folderId else current + (folderId to policy) }
+    }
+    override suspend fun deletePhoto(folderId: String, photoId: String) {
+        folders.update { records ->
+            records.map { if (it.id == folderId) it.copy(photos = it.photos.filterNot { photo -> photo.id == photoId }) else it }
+        }
+    }
 
     override fun observeServerUrl(): Flow<String> = serverUrl
+    override fun observeGoogleAccount(): Flow<GoogleAccount?> = googleAccount
+    override suspend fun signInWithGoogle(idToken: String) {
+        googleAccount.value = GoogleAccount("family@example.test", "Family User", 1)
+    }
+    override suspend fun signOutFromGoogle() { googleAccount.value = null }
 
     override fun observeStats(): Flow<DashboardStats> = folders.map { records ->
         DashboardStats(

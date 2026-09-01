@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import com.photosync.android.domain.model.DashboardStats
 import com.photosync.android.domain.model.FolderSummary
 import com.photosync.android.ui.theme.PhotoSyncTheme
@@ -48,8 +49,7 @@ class HomeScreenTest {
 
         composeRule.onNodeWithText("PhotoSync").assertIsDisplayed()
         composeRule.onNodeWithText("Vacation").assertIsDisplayed()
-        composeRule.onNodeWithTag("folder_view_mode_toggle").assertIsDisplayed()
-        composeRule.onAllNodesWithTag("folder_row").assertCountEquals(2)
+        composeRule.onAllNodesWithTag("folder_card").assertCountEquals(2)
     }
 
     @Test
@@ -69,6 +69,9 @@ class HomeScreenTest {
         }
 
         composeRule.onNodeWithTag("home_add_folder").performClick()
+        assertEquals(0, clickCount)
+        composeRule.onNodeWithTag("folder_name_input").performTextInput("Family")
+        composeRule.onNodeWithText("Create", useUnmergedTree = true).performClick()
 
         assertEquals(1, clickCount)
     }

@@ -1,5 +1,17 @@
 # PhotoSync Android Screen Concepts
 
+## Current direction: warm family album
+
+The user selected a warm family-photo-album direction. See
+[warm-family-v1](warm-family-v1/README.md) for the new screen concepts, proposed
+visual system and implementation constraints. These are design mockups, not
+screenshots of working family/authentication features. The earlier explorations
+below remain as history and are not the selected direction.
+
+For comparison, [modern-warm-v2](modern-warm-v2/README.md) explores the same core
+screens with sans-serif typography and flatter surfaces. The user liked v1 and
+requested this alternative; the final choice between the two is still pending.
+
 This folder contains early visual concepts for the Android client.
 
 Files:
@@ -26,7 +38,7 @@ Common product goals across all concepts:
 - make `on phone` vs `on server only` easy to understand
 - keep folder-based mental model simple
 
-## Recommended Starting Direction
+## Earlier recommendation (superseded by warm-family-v1)
 
 If choosing one direction to refine first:
 

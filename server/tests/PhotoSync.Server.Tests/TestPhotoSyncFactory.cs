@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using PhotoSync.Server.Security;
 
 namespace PhotoSync.Server.Tests;
 
@@ -8,10 +12,12 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
 {
     private readonly string _rootPath;
     private readonly IReadOnlyDictionary<string, string?> _settings;
+    private readonly IGoogleTokenVerifier? _googleVerifier;
 
-    public TestPhotoSyncFactory(IReadOnlyDictionary<string, string?>? settings = null)
+    public TestPhotoSyncFactory(IReadOnlyDictionary<string, string?>? settings = null, IGoogleTokenVerifier? googleVerifier = null)
     {
         _settings = settings ?? new Dictionary<string, string?>();
+        _googleVerifier = googleVerifier;
         _rootPath = Path.Combine(Path.GetTempPath(), "photosync-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_rootPath);
     }
@@ -40,6 +46,14 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
             foreach (var entry in _settings) settings[entry.Key] = entry.Value;
             configBuilder.AddInMemoryCollection(settings);
         });
+        if (_googleVerifier is not null)
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IGoogleTokenVerifier>();
+                services.AddSingleton(_googleVerifier);
+            });
+        }
     }
 
     public new async ValueTask DisposeAsync()

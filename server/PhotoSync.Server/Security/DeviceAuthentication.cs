@@ -22,6 +22,7 @@ public sealed class DeviceAuthentication(
 {
     public const string SchemeName = "Device";
     public const string DeviceClaim = "photosync_device_id";
+    public const string GoogleSubjectClaim = "photosync_google_subject";
 
     public static string? ReadSecret(HttpRequest request)
     {
@@ -48,10 +49,13 @@ public sealed class DeviceAuthentication(
         if (credential is null || !Matches(secret, credential.SecretHash))
             return AuthenticateResult.Fail("Invalid device credentials.");
 
-        var identity = new ClaimsIdentity([
+        var claims = new List<Claim> {
             new Claim(DeviceClaim, device!.Id.ToString()),
             new Claim(ClaimTypes.NameIdentifier, uuid.ToString())
-        ], SchemeName);
+        };
+        if (!string.IsNullOrWhiteSpace(device.GoogleSubject))
+            claims.Add(new Claim(GoogleSubjectClaim, device.GoogleSubject));
+        var identity = new ClaimsIdentity(claims, SchemeName);
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName));
     }
 }

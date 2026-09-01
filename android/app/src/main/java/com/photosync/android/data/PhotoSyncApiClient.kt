@@ -7,6 +7,7 @@ import com.photosync.android.data.remote.DeviceSummaryDto
 import com.photosync.android.data.remote.FileItemDto
 import com.photosync.android.data.remote.FileUploadResultDto
 import com.photosync.android.data.remote.ServerSummaryDto
+import com.photosync.android.domain.model.GoogleAccount
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -18,7 +19,10 @@ import java.net.URL
 
 class PhotoSyncApiClient(
     private var baseUrl: String = DEFAULT_BASE_URL,
+    private val identity: DeviceIdentity,
 ) {
+
+    fun deviceUuid(): String = identity.credentials(effectiveBaseUrl()).first
 
     fun updateBaseUrl(newBaseUrl: String) {
         baseUrl = normalizeBaseUrl(newBaseUrl)
@@ -31,6 +35,9 @@ class PhotoSyncApiClient(
         deviceName: String,
         appVersion: String,
     ): DeviceRegistrationDto {
+        check(getJson("/api/server/capabilities").optBoolean("device_auth")) {
+            "Update the server: private device access is required"
+        }
         val payload = JSONObject()
             .put("device_uuid", deviceUuid)
             .put("device_name", deviceName)
@@ -129,6 +136,17 @@ class PhotoSyncApiClient(
 
     fun downloadPreview(serverFileId: Int): ByteArray = getBytes("/api/files/$serverFileId/preview")
 
+    fun googleAccount(): GoogleAccount? = getJson("/api/auth/google/me").toGoogleAccount()
+
+    fun signInWithGoogle(idToken: String): GoogleAccount = postJson(
+        "/api/auth/google/sign-in",
+        JSONObject().put("id_token", idToken),
+    ).toGoogleAccount() ?: error("Server did not return the linked Google account")
+
+    fun signOutFromGoogle() {
+        postJson("/api/auth/google/sign-out", JSONObject())
+    }
+
     fun uploadFile(
         deviceUuid: String,
         albumName: String,
@@ -155,8 +173,9 @@ class PhotoSyncApiClient(
             writeFormField(output, boundary, "is_video", mimeType.startsWith("video/").toString())
 
             output.writeBytes("--$boundary\r\n")
-            output.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"$originalName\"\r\n")
-            output.writeBytes("Content-Type: $mimeType\r\n\r\n")
+            val headerName = originalName.replace(Regex("[\\r\\n\\\"]"), "_")
+            output.write("Content-Disposition: form-data; name=\"file\"; filename=\"$headerName\"\r\n".toByteArray(Charsets.UTF_8))
+            output.writeBytes("Content-Type: " + mimeType.replace("\r", "").replace("\n", "") + "\r\n\r\n")
             output.write(fileBytes)
             output.writeBytes("\r\n--$boundary--\r\n")
             output.flush()
@@ -191,11 +210,16 @@ class PhotoSyncApiClient(
     }
 
     private fun openConnection(path: String, method: String): HttpURLConnection {
-        val connection = URL(effectiveBaseUrl().trimEnd('/') + path).openConnection() as HttpURLConnection
+        val origin = effectiveBaseUrl()
+        val connection = URL(origin + path).openConnection() as HttpURLConnection
         connection.requestMethod = method
+        connection.instanceFollowRedirects = false
         connection.connectTimeout = 5_000
         connection.readTimeout = 10_000
         connection.setRequestProperty("Accept", "application/json")
+        val (uuid, secret) = identity.credentials(origin)
+        connection.setRequestProperty("X-PhotoSync-Device", uuid)
+        connection.setRequestProperty("Authorization", "Bearer $secret")
         return connection
     }
 
@@ -236,7 +260,7 @@ class PhotoSyncApiClient(
     ) {
         output.writeBytes("--$boundary\r\n")
         output.writeBytes("Content-Disposition: form-data; name=\"$name\"\r\n\r\n")
-        output.writeBytes(value)
+        output.write(value.toByteArray(Charsets.UTF_8))
         output.writeBytes("\r\n")
     }
 
@@ -247,6 +271,15 @@ class PhotoSyncApiClient(
     private fun effectiveBaseUrl(): String = normalizeBaseUrl(baseUrl)
 
     private fun normalizeBaseUrl(value: String): String {
-        return value.trim().ifBlank { DEFAULT_BASE_URL }
+        return ServerAddress.normalize(value.trim().ifBlank { DEFAULT_BASE_URL })
     }
+}
+
+private fun JSONObject.toGoogleAccount(): GoogleAccount? {
+    if (!has("email")) return null
+    return GoogleAccount(
+        email = getString("email"),
+        displayName = getString("display_name"),
+        linkedDevices = getInt("linked_devices"),
+    )
 }

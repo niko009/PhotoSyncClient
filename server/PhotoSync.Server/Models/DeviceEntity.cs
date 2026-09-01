@@ -14,5 +14,11 @@ public sealed class DeviceEntity
 
     public DateTimeOffset LastSeenAtUtc { get; set; }
 
+    public string? GoogleSubject { get; set; }
+
+    public string? GoogleEmail { get; set; }
+
+    public string? GoogleDisplayName { get; set; }
+
     public ICollection<AlbumEntity> Albums { get; set; } = [];
 }

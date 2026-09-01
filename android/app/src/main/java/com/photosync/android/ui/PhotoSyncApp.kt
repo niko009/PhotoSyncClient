@@ -8,7 +8,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -23,6 +25,8 @@ import com.photosync.android.ui.home.HomeScreen
 import com.photosync.android.ui.home.HomeViewModel
 import com.photosync.android.ui.settings.SettingsScreen
 import com.photosync.android.ui.settings.SettingsViewModel
+import com.photosync.android.data.GoogleCredentialClient
+import kotlinx.coroutines.launch
 
 private object PhotoSyncRoute {
     const val home = "home"
@@ -77,11 +81,21 @@ fun PhotoSyncApp(
                 factory = SettingsViewModel.Factory(repository),
             )
             val uiState = viewModel.state.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
             SettingsScreen(
                 state = uiState.value,
                 onBack = navController::popBackStack,
                 onSaveServerUrl = viewModel::saveServerUrl,
                 onSaveGlobalPolicy = viewModel::saveGlobalPolicy,
+                onGoogleSignIn = {
+                    scope.launch {
+                        runCatching { GoogleCredentialClient(context).signIn() }
+                            .onSuccess(viewModel::signInWithGoogle)
+                            .onFailure { viewModel.googleCredentialFailed() }
+                    }
+                },
+                onGoogleSignOut = viewModel::signOutFromGoogle,
             )
         }
 

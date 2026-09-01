@@ -11,8 +11,8 @@ class PreferencesStore(
 ) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val serverUrlState = MutableStateFlow(
-        preferences.getString(KEY_SERVER_URL, PhotoSyncApiClient.DEFAULT_BASE_URL)
-            ?: PhotoSyncApiClient.DEFAULT_BASE_URL
+        runCatching { ServerAddress.normalize(preferences.getString(KEY_SERVER_URL, null)
+            ?: PhotoSyncApiClient.DEFAULT_BASE_URL) }.getOrDefault(PhotoSyncApiClient.DEFAULT_BASE_URL)
     )
     private val globalCleanupPolicyState = MutableStateFlow(
         PhotoCleanupPolicy.valueOf(
@@ -27,7 +27,7 @@ class PreferencesStore(
     fun getGlobalPhotoCleanupPolicy(): PhotoCleanupPolicy = globalCleanupPolicyState.value
 
     fun updateServerUrl(serverUrl: String) {
-        val normalized = serverUrl.trim().ifBlank { PhotoSyncApiClient.DEFAULT_BASE_URL }
+        val normalized = ServerAddress.normalize(serverUrl)
         preferences.edit().putString(KEY_SERVER_URL, normalized).apply()
         serverUrlState.value = normalized
     }

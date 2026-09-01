@@ -16,7 +16,7 @@ reports no known vulnerable dependencies.
 
 ## Security gate
 
-The local 0.2.0-beta API now authenticates each installation with a secret and
+The 0.3.0-beta API authenticates each installation with a secret and
 isolates devices. The matching APK sends that secret; the old published APK
 does not. See [device access](device-access.md). Enrollment is still automatic:
 The first portal implementation adds login/enrollment rate limits, a 5-device cap,
@@ -29,8 +29,8 @@ separate Google accounts, invitations and per-folder permissions. Each participa
 may have multiple devices. Private folders remain private by default; family
 membership alone does not grant access to photos. See the
 [family-sharing design](family-sharing.md). This is not a public multi-tenant hosting service.
-Google and family access are not implemented yet. The default is private access
-without an account. Full portal operation still requires private portal
+Google same-account device linking is implemented; family invitations and folder
+ACLs are not. The default remains private access without an account. Full portal operation still requires private portal
 credential/proxy provisioning; container and backup checks are tracked separately. Windows storage can
 be configured later: [Windows / VirtualBox setup](windows-virtualbox-setup.md).
 
@@ -94,7 +94,8 @@ route. The public product page and APK remain separate from this server URL.
 
 - Source release: `373c3da`; website manifest: `eff62e7`; registration command: `5930135`.
 - Public DNS created; HTTPS `/health` returned 200 with protocol 2.
-- Capabilities confirm device authentication, no Google/family support yet.
+- Capabilities initially confirmed device authentication. The 0.3.0 deployment
+  enables Google device linking; family support remains disabled.
 - A synthetic 68-byte PNG was uploaded and downloaded with matching SHA-256.
 - Anonymous and incorrect-secret API requests returned 401.
 - Probe device ID 1, file ID 1; this uses one of five device slots. No personal photos were used.

@@ -11,6 +11,11 @@ using PhotoSync.Server.Portal;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddOptions<PhotoSync.Server.Security.GoogleAuthOptions>()
+    .Bind(builder.Configuration.GetSection(PhotoSync.Server.Security.GoogleAuthOptions.SectionName))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.ClientId), "GoogleAuth:ClientId is required.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<PhotoSync.Server.Security.IGoogleTokenVerifier, PhotoSync.Server.Security.GoogleTokenVerifier>();
 builder.Services.AddPortal();
 builder.Services.AddAuthentication(PhotoSync.Server.Security.DeviceAuthentication.SchemeName)
     .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, PhotoSync.Server.Security.DeviceAuthentication>(
@@ -90,6 +95,7 @@ app.Use(async (context, next) =>
 });
 
 app.MapServerEndpoints();
+app.MapGoogleAuthEndpoints();
 app.MapPortal();
 app.MapGet("/health", async (PhotoSyncDbContext db) =>
     await db.Database.CanConnectAsync() ? Results.Ok(new { status = "ok", service = "photosync", protocol_version = 2 }) : Results.StatusCode(503)).AllowAnonymous();

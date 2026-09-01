@@ -45,6 +45,6 @@ class FolderDetailScreenTest {
 
         composeRule.onNodeWithText("Camera Roll").assertIsDisplayed()
         composeRule.onAllNodesWithTag("photo_cell").assertCountEquals(4)
-        composeRule.onAllNodesWithTag("photo_status").assertCountEquals(4)
+        composeRule.onAllNodesWithTag("photo_status", useUnmergedTree = true).assertCountEquals(4)
     }
 }

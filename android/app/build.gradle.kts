@@ -1,6 +1,13 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val releaseSigningFile = rootProject.file("android/signing/signing.properties")
+val releaseSigning = Properties().apply {
+    if (releaseSigningFile.exists()) releaseSigningFile.inputStream().use(::load)
 }
 
 android {
@@ -11,8 +18,8 @@ android {
         applicationId = "com.photosync.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0-beta"
+        versionCode = 3
+        versionName = "0.3.0-beta"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://photosync.bacus.dev\"")
         // Public OAuth identifier. Never place the Google client_secret in an APK.
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"221018828266-g4jt660ltqoaf2oniuolc82i3m1mpoee.apps.googleusercontent.com\"")
@@ -23,6 +30,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningFile.exists()) {
+            create("photosyncRelease") {
+                storeFile = releaseSigningFile.parentFile.resolve(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -30,6 +48,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (releaseSigningFile.exists()) signingConfig = signingConfigs.getByName("photosyncRelease")
         }
     }
 
@@ -73,6 +92,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.google.identity.googleid)
     implementation(composeBom)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

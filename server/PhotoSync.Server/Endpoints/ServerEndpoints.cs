@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PhotoSync.Server.Contracts;
 using PhotoSync.Server.Options;
 using PhotoSync.Server.Services;
+using PhotoSync.Server.Security;
 
 namespace PhotoSync.Server.Endpoints;
 
@@ -25,10 +26,10 @@ public static class ServerEndpoints
             return TypedResults.Ok(response);
         }).AllowAnonymous();
 
-        group.MapGet("/capabilities", () => TypedResults.Ok(new
+        group.MapGet("/capabilities", (IOptions<GoogleAuthOptions> google) => TypedResults.Ok(new
         {
             device_auth = true,
-            google_auth = false,
+            google_auth = !string.IsNullOrWhiteSpace(google.Value.ClientId),
             family_sharing = false,
             protocol_version = 2
         })).AllowAnonymous();

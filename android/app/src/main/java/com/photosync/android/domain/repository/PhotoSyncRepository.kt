@@ -5,6 +5,7 @@ import com.photosync.android.domain.model.DashboardStats
 import com.photosync.android.domain.model.FolderDetail
 import com.photosync.android.domain.model.PhotoCleanupPolicy
 import com.photosync.android.domain.model.FolderSummary
+import com.photosync.android.domain.model.GoogleAccount
 import kotlinx.coroutines.flow.Flow
 
 interface PhotoSyncRepository {
@@ -13,6 +14,7 @@ interface PhotoSyncRepository {
     fun observeFolderPhotoCleanupPolicy(folderId: String): Flow<PhotoCleanupPolicy?>
     fun observeStats(): Flow<DashboardStats>
     fun observeFolders(): Flow<List<FolderSummary>>
+    fun observeGoogleAccount(): Flow<GoogleAccount?>
     fun observeFolder(folderId: String): Flow<FolderDetail?>
     suspend fun refresh()
     suspend fun updateServerUrl(serverUrl: String)
@@ -22,4 +24,6 @@ interface PhotoSyncRepository {
     suspend fun uploadToFolder(folderId: String, uri: Uri)
     suspend fun downloadPhoto(folderId: String, photoId: String)
     suspend fun deletePhoto(folderId: String, photoId: String)
+    suspend fun signInWithGoogle(idToken: String)
+    suspend fun signOutFromGoogle()
 }

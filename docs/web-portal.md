@@ -101,7 +101,7 @@ Windows недоступен; образ успешно собран и запу
 1. Настроить секрет владельца и trusted proxy, развернуть один
    контейнер; проверить APK → upload → download, перезапуск и сохранность тома.
 2. Безопасное сопряжение телефона через одноразовый код/QR вместо ручного назначения.
-3. Google OAuth и привязка нескольких телефонов к аккаунту; восстановление доступа.
+3. Веб-вход через Google и управляемое восстановление потерянных пространств.
 4. Семейные приглашения и ACL отдельных альбомов (отдельно от роли администратора).
 5. Веб-галерея, аудит ошибок загрузки, управление блокировками/квотами, MFA.
 6. Реестр нескольких серверов: стабильный ID, heartbeat, версии, состояние диска,
@@ -110,12 +110,12 @@ Windows недоступен; образ успешно собран и запу
 
 ## Проверки
 
-29 серверных integration/unit tests прошли: изоляция телефонов и пользователей,
+30 серверных integration/unit tests прошли: изоляция телефонов и пользователей,
 роли, CSRF, защищённая cookie, отзыв сессий, блокировка входа, назначение устройства,
 скачивание только владельцем, лимиты устройств/файлов/места и прежний upload API.
 Release publish и JavaScript syntax check прошли. В браузере проверены страница
 входа и ширина 390 px без горизонтального переполнения. Весь интерактивный кабинет
-в реальном HTTPS-браузере и Docker/production ещё требуют отдельного smoke-test.
+в реальном HTTPS-браузере ещё требует отдельного smoke-test.
 NuGet audit не обнаружил известных уязвимых зависимостей в текущих источниках.
 
 SDK: проверка выполнена установленным .NET 10.0.400 из корня репозитория.
@@ -134,5 +134,9 @@ Google Cloud must also contain an Android OAuth client in the same project:
 - release signing SHA-1: `52:DB:EB:ED:D4:CC:89:5B:1B:2C:EF:DF:8B:4E:44:B3:60:6F:4F:B4`.
 
 If the OAuth consent screen is in Testing mode, add each Google account that will
-test PhotoSync. This configuration alone does not enable the feature: Credential
-Manager UI, backend token validation and account/device linking remain implementation work.
+test PhotoSync. Android Credential Manager, server-side ID-token validation and
+device linking are implemented in 0.3.0-beta. The server validates the token
+audience against the Web Client ID and stores only Google `sub`, verified email
+and display name; it does not store the ID token or a Google access token. This
+does not yet add Google login to the web portal and does not implement family
+invitations or per-folder ACLs.

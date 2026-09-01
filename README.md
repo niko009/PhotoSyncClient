@@ -6,13 +6,19 @@ The Android application organizes media into logical folders and uploads it over
 
 > **Status:** MVP under active development. This repository is the canonical source for both the Android client and the server.
 
+Version 0.3.0-beta adds optional Google account linking to the warm album design.
+Without Google, every installation still has its own private device space. After
+sign-in, devices linked to the same verified Google account share one archive.
+Update **both** server and Android together. See
+[release notes and migration warnings](docs/release-0.3.0.md).
+
 ## Repository layout
 
 | Path | Purpose |
 | --- | --- |
 | `android/app` | Kotlin and Jetpack Compose Android client |
 | `server/PhotoSync.Server` | ASP.NET Core server and SQLite persistence |
-| `server/PhotoSync.Server.Tests` | Server integration and unit tests |
+| `server/tests/PhotoSync.Server.Tests` | Active server integration and unit tests |
 | `docs` | Architecture, API contract, UX notes, and MVP roadmap |
 | `design` | Product flows and design handoff material |
 | `scripts` | Local development and device automation helpers |
@@ -24,6 +30,11 @@ The Android application organizes media into logical folders and uploads it over
 - [MVP roadmap](docs/photosync-mvp-roadmap.md)
 - [UX notes](docs/photosync-ux-notes.md)
 - [Design overview](design/README.md)
+- [Device authentication and migration](docs/device-access.md)
+- [Web portal roles, operator setup and next steps (RU)](docs/web-portal.md)
+- [Bacus Lab container deployment](docs/bacus-deployment.md)
+- [Windows / VirtualBox storage and Google sign-in (RU)](docs/windows-virtualbox-setup.md)
+- [Family accounts and folder permissions (RU)](docs/family-sharing.md) (planned, not implemented)
 
 ## Run the server
 
@@ -38,7 +49,7 @@ By default, runtime files and the SQLite database are written below `data/`. Thi
 
 ## Build the Android application
 
-Requirements: JDK 11 and Android SDK 34.
+Requirements: JDK 17 (build tested with Corretto 17), Android SDK 34.
 
 ```powershell
 ./gradlew.bat :android:app:assembleDebug
@@ -59,4 +70,8 @@ dotnet test server/PhotoSync.Server.slnx
 - Synchronization is one-way: Android to server.
 - Server files are never deleted automatically.
 - Upload completion means the server has verified and committed the file.
-- The MVP is designed for a trusted local network and does not provide internet-facing authentication.
+- Data endpoints require a per-installation secret plus device ID. ID alone is not a password.
+- Google sign-in and same-account device linking are implemented. Linking does not
+  recover archives created by an older, already-lost device key; family sharing,
+  background folder watching and operator-assisted recovery remain planned.
+- Enrollment accepts new devices automatically up to the configured cap (5 by default). Initial storage and request limits are implemented; internet hosting still requires TLS, operator credentials, trusted proxy setup and operational checks. Invitation-based enrollment is planned.

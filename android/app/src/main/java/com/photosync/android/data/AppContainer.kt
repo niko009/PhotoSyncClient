@@ -14,7 +14,7 @@ class DefaultAppContainer(
         val preferencesStore = PreferencesStore(context)
         NetworkPhotoSyncRepository(
             context = context,
-            apiClient = PhotoSyncApiClient(preferencesStore.getServerUrl()),
+            apiClient = PhotoSyncApiClient(preferencesStore.getServerUrl(), DeviceIdentity(context)),
             preferencesStore = preferencesStore,
         )
     }

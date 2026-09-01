@@ -9,6 +9,7 @@ public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> opti
     // Internal maintenance scopes have no HTTP context. Every HTTP request is scoped.
     private bool IsHttpRequest => accessor?.HttpContext is not null;
     private int CallerDeviceId => int.TryParse(accessor?.HttpContext?.User.FindFirst(DeviceAuthentication.DeviceClaim)?.Value, out var id) ? id : -1;
+    private string? CallerGoogleSubject => accessor?.HttpContext?.User.FindFirst(DeviceAuthentication.GoogleSubjectClaim)?.Value;
     public DbSet<DeviceCredential> DeviceCredentials => Set<DeviceCredential>();
     public DbSet<DeviceEntity> Devices => Set<DeviceEntity>();
 
@@ -27,18 +28,24 @@ public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> opti
         });
         modelBuilder.Entity<DeviceEntity>(entity =>
         {
-            entity.HasQueryFilter(x => !IsHttpRequest || x.Id == CallerDeviceId);
+            entity.HasQueryFilter(x => !IsHttpRequest || x.Id == CallerDeviceId ||
+                (CallerGoogleSubject != null && x.GoogleSubject == CallerGoogleSubject));
             entity.ToTable("devices");
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.DeviceUuid).IsUnique();
             entity.Property(x => x.DeviceName).HasMaxLength(200).IsRequired();
             entity.Property(x => x.AppVersion).HasMaxLength(50).IsRequired();
             entity.Property(x => x.StorageFolderName).HasMaxLength(250).IsRequired();
+            entity.Property(x => x.GoogleSubject).HasMaxLength(255);
+            entity.Property(x => x.GoogleEmail).HasMaxLength(320);
+            entity.Property(x => x.GoogleDisplayName).HasMaxLength(200);
+            entity.HasIndex(x => x.GoogleSubject);
         });
 
         modelBuilder.Entity<AlbumEntity>(entity =>
         {
-            entity.HasQueryFilter(x => !IsHttpRequest || x.DeviceId == CallerDeviceId);
+            entity.HasQueryFilter(x => !IsHttpRequest || x.DeviceId == CallerDeviceId ||
+                (CallerGoogleSubject != null && x.Device.GoogleSubject == CallerGoogleSubject));
             entity.ToTable("albums");
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.DeviceId, x.AlbumName }).IsUnique();
@@ -52,7 +59,8 @@ public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> opti
 
         modelBuilder.Entity<StoredFileEntity>(entity =>
         {
-            entity.HasQueryFilter(x => !IsHttpRequest || x.DeviceId == CallerDeviceId);
+            entity.HasQueryFilter(x => !IsHttpRequest || x.DeviceId == CallerDeviceId ||
+                (CallerGoogleSubject != null && x.Device.GoogleSubject == CallerGoogleSubject));
             entity.ToTable("files");
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.DeviceId, x.AlbumId, x.Sha256 }).IsUnique();
