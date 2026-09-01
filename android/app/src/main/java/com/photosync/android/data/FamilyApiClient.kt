@@ -30,11 +30,12 @@ class FamilyApiClient(
 
     fun acceptInvite(token: String, idToken: String) {
         require(token.matches(Regex("[A-Za-z0-9_-]{20,256}"))) { "Invalid invitation link" }
-        request(
-            "/api/family/join/$token",
-            "POST",
-            JSONObject().put("id_token", idToken),
-        )
+        val googlePayload = JSONObject().put("id_token", idToken)
+        // A recipient opening a deep link may not yet have a PhotoSync User row.
+        // Link the authenticated device to the verified Google subject first;
+        // the server then uses that permanent subject when accepting the invite.
+        request("/api/auth/google/sign-in", "POST", googlePayload)
+        request("/api/family/join/$token", "POST", googlePayload)
     }
 
     private fun request(path: String, method: String, payload: JSONObject? = null): JSONObject {
