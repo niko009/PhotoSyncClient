@@ -7,7 +7,10 @@ services:
       ASPNETCORE_HTTP_PORTS: "8080"
       ASPNETCORE_ENVIRONMENT: Production
       PhotoSync__ServerName: Bacus Lab PhotoSync
-      PhotoSync__StorageRoot: /data
+      # Media files live on the Windows-backed VirtualBox shared folder.
+      # The host path /mnt/server is bind-mounted to /storage below.
+      PhotoSync__StorageRoot: /storage
+      # Keep SQLite on the native Docker volume rather than the shared folder.
       PhotoSync__DatabasePath: /data/system/photosync.db
       ConnectionStrings__PhotoSync: Data Source=/data/system/photosync.db
       PhotoSync__MaxDevices: "5"
@@ -21,7 +24,10 @@ services:
       - path: /srv/bacus/apps/photosync/portal.env
         required: false
     volumes:
+      # Native Docker volume for SQLite and other server-internal state.
       - photosync-data:/data
+      # Windows folder mounted in Ubuntu through VirtualBox Shared Folders.
+      - /mnt/server:/storage
     # Only the Bacus reverse proxy should reach this port; no host port binding.
     expose:
       - "8080"
