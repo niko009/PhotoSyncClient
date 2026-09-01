@@ -23,3 +23,11 @@ data class FamilyInvite(
     val status: String,
     val inviteUrl: String? = null,
 )
+
+data class AccessibleAlbum(
+    val albumId: Int,
+    val name: String,
+    val permission: String,
+    val sharingMode: String,
+    val ownedByMe: Boolean,
+)
