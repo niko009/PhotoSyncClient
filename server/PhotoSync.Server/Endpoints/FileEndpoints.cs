@@ -1,8 +1,7 @@
-using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PhotoSync.Server.Contracts;
 using PhotoSync.Server.Data;
+using PhotoSync.Server.Models;
 using PhotoSync.Server.Services;
 
 namespace PhotoSync.Server.Endpoints;
@@ -12,223 +11,201 @@ public static class FileEndpoints
     public static RouteGroupBuilder MapFileEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/files");
-
-        group.MapPost("/check", CheckAsync)
-            .Produces<FileCheckResponse>(StatusCodes.Status200OK);
-
-        group.MapPost("/upload", UploadAsync)
-            .Produces<UploadFileResponse>(StatusCodes.Status201Created)
-            .Produces<UploadFileResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .DisableAntiforgery();
-
-        group.MapGet("/device/{deviceId:int}", ListForDeviceAsync)
-            .Produces<FileListResponse>(StatusCodes.Status200OK);
-
-        group.MapGet("/{fileId:int}/preview", PreviewAsync)
-            .Produces(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status404NotFound);
-
-        group.MapGet("/{fileId:int}/download", DownloadAsync)
-            .Produces(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status404NotFound);
-
+        group.MapPost("/check", CheckAsync);
+        group.MapPost("/album/{albumId:int}/check", CheckAlbumAsync);
+        group.MapPost("/upload", UploadAsync).DisableAntiforgery();
+        group.MapGet("/device/{deviceId:int}", ListForDeviceAsync);
+        group.MapGet("/album/{albumId:int}", ListForAlbumAsync);
+        group.MapGet("/{fileId:int}/preview", PreviewAsync);
+        group.MapGet("/{fileId:int}/download", DownloadAsync);
+        group.MapPost("/{fileId:int}/archive", ArchiveAsync);
         return group;
     }
 
-    private static async Task<Ok<FileCheckResponse>> CheckAsync(
-        FileCheckRequest request,
-        PhotoSyncDbContext dbContext,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> CheckAsync(FileCheckRequest request, PhotoSyncDbContext db,
+        FolderAccessService access, CancellationToken ct)
     {
-        var normalizedHash = request.Sha256.Trim().ToLowerInvariant();
-        var existing = await dbContext.Files.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Sha256 == normalizedHash
-                && x.Device.DeviceUuid == request.DeviceUuid
-                && x.Album.AlbumName == request.AlbumName.Trim(), cancellationToken);
+        if (request.DeviceUuid == Guid.Empty || string.IsNullOrWhiteSpace(request.AlbumName) || string.IsNullOrWhiteSpace(request.Sha256))
+            return Results.Ok(new FileCheckResponse(false));
 
-        return existing is null
-            ? TypedResults.Ok(new FileCheckResponse(false))
-            : TypedResults.Ok(new FileCheckResponse(true, existing.Id, existing.RelativePath));
+        var album = await db.Albums.IgnoreQueryFilters().AsNoTracking()
+            .Include(x => x.Device)
+            .SingleOrDefaultAsync(x => x.Device.DeviceUuid == request.DeviceUuid &&
+                x.AlbumName == request.AlbumName.Trim() && x.ArchivedAtUtc == null, ct);
+        if (album is null || !OwnsDevice(access, album.Device) || !await access.CanContributeAsync(album, ct))
+            return Results.Ok(new FileCheckResponse(false));
+
+        return await DedupResponseAsync(album.Id, request.Sha256, db, ct);
     }
 
-    private static async Task<Results<Created<UploadFileResponse>, Ok<UploadFileResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> UploadAsync(
-        HttpRequest request,
-        PhotoSyncDbContext dbContext,
-        FileStorageService storageService,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> CheckAlbumAsync(int albumId, AlbumFileCheckRequest request, PhotoSyncDbContext db,
+        FolderAccessService access, CancellationToken ct)
+    {
+        var album = await db.Albums.IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == albumId && x.ArchivedAtUtc == null, ct);
+        if (album is null || !await access.CanContributeAsync(album, ct))
+            return Results.Ok(new FileCheckResponse(false));
+        return await DedupResponseAsync(album.Id, request.Sha256, db, ct);
+    }
+
+    private static async Task<IResult> DedupResponseAsync(int albumId, string sha256, PhotoSyncDbContext db, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sha256)) return Results.Ok(new FileCheckResponse(false));
+        var normalizedHash = sha256.Trim().ToLowerInvariant();
+        var existing = await db.Files.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(x => x.AlbumId == albumId && x.Sha256 == normalizedHash && x.ArchivedAtUtc == null, ct);
+        return existing is null
+            ? Results.Ok(new FileCheckResponse(false))
+            : Results.Ok(new FileCheckResponse(true, existing.Id, existing.RelativePath));
+    }
+
+    private static async Task<IResult> UploadAsync(HttpRequest request, PhotoSyncDbContext db,
+        FileStorageService storageService, FolderAccessService access, CancellationToken ct)
     {
         if (!request.HasFormContentType)
-        {
-            return TypedResults.BadRequest(ApiProblems.Validation("INVALID_CONTENT_TYPE", "multipart/form-data is required."));
-        }
+            return Results.BadRequest(ApiProblems.Validation("INVALID_CONTENT_TYPE", "multipart/form-data is required."));
 
-        var form = await request.ReadFormAsync(cancellationToken);
+        var form = await request.ReadFormAsync(ct);
         var file = form.Files.GetFile("file");
-        if (file is null)
-        {
-            return TypedResults.BadRequest(ApiProblems.Validation("FILE_REQUIRED", "Multipart field 'file' is required."));
-        }
+        if (file is null) return Results.BadRequest(ApiProblems.Validation("FILE_REQUIRED", "Multipart field 'file' is required."));
 
-        if (!Guid.TryParse(form["device_uuid"], out var deviceUuid))
-        {
-            return TypedResults.BadRequest(ApiProblems.Validation("INVALID_DEVICE", "Field 'device_uuid' must be a valid UUID."));
-        }
-
-        var albumName = form["album_name"].ToString().Trim();
         var originalName = form["original_name"].ToString().Trim();
         var mimeType = form["mime_type"].ToString().Trim();
         var sha256 = form["sha256"].ToString().Trim().ToLowerInvariant();
-
-        if (string.IsNullOrWhiteSpace(albumName) || string.IsNullOrWhiteSpace(originalName) || string.IsNullOrWhiteSpace(mimeType) || string.IsNullOrWhiteSpace(sha256))
-        {
-            return TypedResults.BadRequest(ApiProblems.Validation("INVALID_UPLOAD_METADATA", "album_name, original_name, mime_type and sha256 are required."));
-        }
-
+        if (string.IsNullOrWhiteSpace(originalName) || string.IsNullOrWhiteSpace(mimeType) || string.IsNullOrWhiteSpace(sha256))
+            return Results.BadRequest(ApiProblems.Validation("INVALID_UPLOAD_METADATA", "original_name, mime_type and sha256 are required."));
         if (!long.TryParse(form["size_bytes"], out var sizeBytes) || sizeBytes < 0)
-        {
-            return TypedResults.BadRequest(ApiProblems.Validation("INVALID_SIZE", "Field 'size_bytes' must be a non-negative integer."));
-        }
-
+            return Results.BadRequest(ApiProblems.Validation("INVALID_SIZE", "Field 'size_bytes' must be a non-negative integer."));
         if (!DateTimeOffset.TryParse(form["created_at"], out var createdAt))
-        {
-            return TypedResults.BadRequest(ApiProblems.Validation("INVALID_CREATED_AT", "Field 'created_at' must be a valid ISO-8601 timestamp."));
-        }
+            return Results.BadRequest(ApiProblems.Validation("INVALID_CREATED_AT", "Field 'created_at' must be a valid ISO-8601 timestamp."));
 
         int? width = int.TryParse(form["width"], out var parsedWidth) ? parsedWidth : null;
         int? height = int.TryParse(form["height"], out var parsedHeight) ? parsedHeight : null;
         long? durationMs = long.TryParse(form["duration_ms"], out var parsedDuration) ? parsedDuration : null;
         var isVideo = bool.TryParse(form["is_video"], out var parsedIsVideo) && parsedIsVideo;
 
-        var device = await dbContext.Devices.SingleOrDefaultAsync(x => x.DeviceUuid == deviceUuid, cancellationToken);
-        if (device is null)
+        AlbumEntity? album;
+        DeviceEntity? device;
+        if (int.TryParse(form["album_id"], out var albumId) && albumId > 0)
         {
-            return TypedResults.NotFound(ApiProblems.NotFound("DEVICE_NOT_FOUND", $"Device '{deviceUuid}' is not registered."));
+            album = await db.Albums.IgnoreQueryFilters().Include(x => x.Device)
+                .SingleOrDefaultAsync(x => x.Id == albumId && x.ArchivedAtUtc == null, ct);
+            device = album?.Device;
+        }
+        else
+        {
+            if (!Guid.TryParse(form["device_uuid"], out var deviceUuid))
+                return Results.BadRequest(ApiProblems.Validation("INVALID_TARGET", "Provide album_id or a valid device_uuid + album_name."));
+            var albumName = form["album_name"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(albumName))
+                return Results.BadRequest(ApiProblems.Validation("INVALID_TARGET", "Provide album_id or a valid device_uuid + album_name."));
+            device = await db.Devices.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.DeviceUuid == deviceUuid, ct);
+            if (device is null || !OwnsDevice(access, device))
+                return Results.NotFound(ApiProblems.NotFound("UPLOAD_TARGET_NOT_FOUND", "Upload target was not found."));
+            album = await db.Albums.IgnoreQueryFilters()
+                .SingleOrDefaultAsync(x => x.DeviceId == device.Id && x.AlbumName == albumName && x.ArchivedAtUtc == null, ct);
         }
 
-        var album = await dbContext.Albums.SingleOrDefaultAsync(x => x.DeviceId == device.Id && x.AlbumName == albumName, cancellationToken);
-        if (album is null)
-        {
-            return TypedResults.NotFound(ApiProblems.NotFound("ALBUM_NOT_FOUND", $"Album '{albumName}' does not exist for device '{deviceUuid}'."));
-        }
+        if (device is null || album is null || !await access.CanContributeAsync(album, ct))
+            return Results.NotFound(ApiProblems.NotFound("UPLOAD_TARGET_NOT_FOUND", "Upload target was not found."));
 
         await using var fileStream = file.OpenReadStream();
-        var storeResult = await storageService.StoreAsync(
-            new StoreFileCommand(
-                device,
-                album,
-                originalName,
-                mimeType,
-                sizeBytes,
-                sha256,
-                createdAt,
-                width,
-                height,
-                durationMs,
-                isVideo,
-                fileStream),
-            cancellationToken);
+        var result = await storageService.StoreAsync(new StoreFileCommand(device, album, originalName, mimeType, sizeBytes,
+            sha256, createdAt, width, height, durationMs, isVideo, fileStream), ct);
 
-        if (storeResult.AlreadyExists)
-        {
-            var existing = storeResult.File!;
-            return TypedResults.Ok(ToUploadResponse(existing));
-        }
+        if (result.IsForbidden) return Results.StatusCode(StatusCodes.Status403Forbidden);
+        if (result.AlreadyExists) return Results.Ok(ToUploadResponse(result.File!));
+        if (result.IsValidationError)
+            return Results.BadRequest(ApiProblems.Validation("UPLOAD_VERIFICATION_FAILED", result.ValidationError!));
 
-        if (storeResult.IsValidationError)
-        {
-            return TypedResults.BadRequest(ApiProblems.Validation("UPLOAD_VERIFICATION_FAILED", storeResult.ValidationError!));
-        }
-
-        var stored = storeResult.File!;
-        return TypedResults.Created($"/api/files/{stored.Id}", ToUploadResponse(stored));
+        var stored = result.File!;
+        return Results.Created($"/api/files/{stored.Id}", ToUploadResponse(stored));
     }
 
-    private static UploadFileResponse ToUploadResponse(Models.StoredFileEntity file)
-        => new(file.Id, file.StoredName, file.RelativePath, false, file.UploadedAtUtc);
+    private static UploadFileResponse ToUploadResponse(StoredFileEntity file) =>
+        new(file.Id, file.StoredName, file.RelativePath, false, file.UploadedAtUtc);
 
-    private static async Task<Ok<FileListResponse>> ListForDeviceAsync(
-        int deviceId,
-        PhotoSyncDbContext dbContext,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> ListForDeviceAsync(int deviceId, PhotoSyncDbContext db,
+        FolderAccessService access, CancellationToken ct)
     {
-        var files = await dbContext.Files.AsNoTracking()
-            .Include(x => x.Album)
-            .Where(x => x.DeviceId == deviceId)
-            .ToListAsync(cancellationToken);
+        var device = await db.Devices.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x => x.Id == deviceId, ct);
+        if (device is null || !OwnsDevice(access, device))
+            return Results.NotFound(ApiProblems.NotFound("DEVICE_NOT_FOUND", "Device was not found."));
 
-        var response = files
-            .OrderBy(x => x.Album.AlbumName)
-            .ThenByDescending(x => x.CreatedAtUtc)
-            .Select(x => new FileListItem(
-                x.Id,
-                x.Album.AlbumName,
-                x.OriginalName,
-                x.RelativePath,
-                x.MimeType,
-                x.SizeBytes,
-                x.UploadedAtUtc,
-                $"/api/files/{x.Id}/preview",
-                $"/api/files/{x.Id}/download"))
-            .ToList();
-
-        return TypedResults.Ok(new FileListResponse(response));
+        var files = await db.Files.IgnoreQueryFilters().AsNoTracking().Include(x => x.Album)
+            .Where(x => x.DeviceId == deviceId && x.ArchivedAtUtc == null && x.Album.ArchivedAtUtc == null)
+            .OrderBy(x => x.Album.AlbumName).ThenByDescending(x => x.UploadedAtUtc)
+            .ToListAsync(ct);
+        return Results.Ok(new FileListResponse(files.Select(ToListItem).ToList()));
     }
 
-    private static async Task<Results<FileContentHttpResult, NotFound<ProblemDetails>>> PreviewAsync(
-        int fileId,
-        PhotoSyncDbContext dbContext,
-        StoragePathResolver pathResolver,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> ListForAlbumAsync(int albumId, PhotoSyncDbContext db,
+        FolderAccessService access, CancellationToken ct)
     {
-        var file = await dbContext.Files.AsNoTracking().SingleOrDefaultAsync(x => x.Id == fileId, cancellationToken);
-        if (file is null)
-        {
-            return TypedResults.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", $"File '{fileId}' was not found."));
-        }
+        var album = await db.Albums.IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == albumId && x.ArchivedAtUtc == null, ct);
+        if (album is null || !await access.CanViewAsync(album, ct))
+            return Results.NotFound(ApiProblems.NotFound("ALBUM_NOT_FOUND", "Album was not found."));
 
-        var bytes = await ReadStoredFileAsync(file, pathResolver, cancellationToken);
-        if (bytes is null)
-        {
-            return TypedResults.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", $"Stored file '{fileId}' was not found."));
-        }
-
-        return TypedResults.File(bytes, file.MimeType);
+        var files = await db.Files.IgnoreQueryFilters().AsNoTracking()
+            .Where(x => x.AlbumId == albumId && x.ArchivedAtUtc == null)
+            .OrderByDescending(x => x.UploadedAtUtc)
+            .ToListAsync(ct);
+        return Results.Ok(new FileListResponse(files.Select(x => new FileListItem(x.Id, album.AlbumName, x.OriginalName,
+            x.RelativePath, x.MimeType, x.SizeBytes, x.UploadedAtUtc,
+            $"/api/files/{x.Id}/preview", $"/api/files/{x.Id}/download")).ToList()));
     }
 
-    private static async Task<Results<FileContentHttpResult, NotFound<ProblemDetails>>> DownloadAsync(
-        int fileId,
-        PhotoSyncDbContext dbContext,
-        StoragePathResolver pathResolver,
-        CancellationToken cancellationToken)
+    private static FileListItem ToListItem(StoredFileEntity file) => new(file.Id, file.Album.AlbumName,
+        file.OriginalName, file.RelativePath, file.MimeType, file.SizeBytes, file.UploadedAtUtc,
+        $"/api/files/{file.Id}/preview", $"/api/files/{file.Id}/download");
+
+    private static async Task<IResult> PreviewAsync(int fileId, PhotoSyncDbContext db,
+        StoragePathResolver pathResolver, FolderAccessService access, CancellationToken ct)
     {
-        var file = await dbContext.Files.AsNoTracking().SingleOrDefaultAsync(x => x.Id == fileId, cancellationToken);
-        if (file is null)
-        {
-            return TypedResults.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", $"File '{fileId}' was not found."));
-        }
-
-        var bytes = await ReadStoredFileAsync(file, pathResolver, cancellationToken);
-        if (bytes is null)
-        {
-            return TypedResults.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", $"Stored file '{fileId}' was not found."));
-        }
-
-        return TypedResults.File(bytes, file.MimeType, file.OriginalName);
+        var file = await AuthorizedFileAsync(fileId, db, access, ct);
+        if (file is null) return Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."));
+        var bytes = await ReadStoredFileAsync(file, pathResolver, ct);
+        return bytes is null
+            ? Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."))
+            : Results.File(bytes, file.MimeType);
     }
 
-    private static async Task<byte[]?> ReadStoredFileAsync(
-        Models.StoredFileEntity file,
-        StoragePathResolver pathResolver,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> DownloadAsync(int fileId, PhotoSyncDbContext db,
+        StoragePathResolver pathResolver, FolderAccessService access, CancellationToken ct)
+    {
+        var file = await AuthorizedFileAsync(fileId, db, access, ct);
+        if (file is null) return Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."));
+        var bytes = await ReadStoredFileAsync(file, pathResolver, ct);
+        return bytes is null
+            ? Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."))
+            : Results.File(bytes, file.MimeType, file.OriginalName);
+    }
+
+    private static async Task<IResult> ArchiveAsync(int fileId, PhotoSyncDbContext db, FolderAccessService access, CancellationToken ct)
+    {
+        var file = await db.Files.IgnoreQueryFilters().Include(x => x.Album)
+            .SingleOrDefaultAsync(x => x.Id == fileId && x.ArchivedAtUtc == null, ct);
+        if (file is null || !await access.CanManageAsync(file.Album, ct)) return Results.NotFound();
+        file.ArchivedAtUtc = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { archived = true, original_preserved = true });
+    }
+
+    private static async Task<StoredFileEntity?> AuthorizedFileAsync(int fileId, PhotoSyncDbContext db,
+        FolderAccessService access, CancellationToken ct)
+    {
+        var file = await db.Files.IgnoreQueryFilters().AsNoTracking().Include(x => x.Album)
+            .SingleOrDefaultAsync(x => x.Id == fileId && x.ArchivedAtUtc == null && x.Album.ArchivedAtUtc == null, ct);
+        return file is not null && await access.CanViewAsync(file.Album, ct) ? file : null;
+    }
+
+    private static bool OwnsDevice(FolderAccessService access, DeviceEntity device) =>
+        access.CurrentDeviceId == device.Id || (access.CurrentUserId is int userId && device.UserId == userId);
+
+    private static async Task<byte[]?> ReadStoredFileAsync(StoredFileEntity file, StoragePathResolver pathResolver, CancellationToken ct)
     {
         var absolutePath = pathResolver.ToAbsolutePath(file.RelativePath);
-        if (!System.IO.File.Exists(absolutePath))
-        {
-            return null;
-        }
-
-        return await System.IO.File.ReadAllBytesAsync(absolutePath, cancellationToken);
+        return System.IO.File.Exists(absolutePath) ? await System.IO.File.ReadAllBytesAsync(absolutePath, ct) : null;
     }
 }

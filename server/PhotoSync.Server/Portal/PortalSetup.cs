@@ -85,9 +85,11 @@ public static class PortalSetup
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(_ =>
                 RateLimitPartition.GetConcurrencyLimiter("server", _ => new ConcurrencyLimiterOptions { PermitLimit = 16, QueueLimit = 0 }));
             options.AddPolicy("portal-login", context => RateLimitPartition.GetFixedWindowLimiter(
-                // Use the actual peer, not arbitrary forwarded IP headers.
                 context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
                 { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            options.AddPolicy("family-invite", context => RateLimitPartition.GetFixedWindowLimiter(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+                { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
         });
         return services;
     }
@@ -105,7 +107,6 @@ public static class PortalSetup
         var config = sp.GetRequiredService<IConfiguration>();
         var name = config["Portal:BootstrapUser"];
         var password = config["Portal:BootstrapPassword"];
-        // No default credentials, public registration or first-visitor admin claim.
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(password)) return;
         var user = new PortalUser { UserName = name };
         Ensure(await manager.CreateAsync(user, password));

@@ -32,7 +32,6 @@ builder.Services
 
 builder.Services.AddDbContext<PhotoSyncDbContext>((services, options) =>
 {
-    // Resolve at scope creation so test-host and deployment overrides are honored.
     var connectionString = services.GetRequiredService<IConfiguration>().GetConnectionString("PhotoSync")
         ?? "Data Source=photosync.db";
     var sqlite = new SqliteConnectionStringBuilder(connectionString);
@@ -45,6 +44,7 @@ builder.Services.AddDbContext<PhotoSyncDbContext>((services, options) =>
 });
 builder.Services.AddSingleton<StoragePathResolver>();
 builder.Services.AddScoped<FileStorageService>();
+builder.Services.AddScoped<FolderAccessService>();
 builder.Services.AddSingleton<UploadGuard>();
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
 {
@@ -57,8 +57,6 @@ var app = builder.Build();
 app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
-    // The Bacus proxy terminates TLS. Promote only the explicitly configured
-    // public HTTPS origin, never an arbitrary forwarded header.
     if (!context.Request.IsHttps && PhotoSync.Server.Portal.PortalSetup.IsSecurePortalRequest(context, app.Configuration))
         context.Request.Scheme = Uri.UriSchemeHttps;
     await next(context);
@@ -85,6 +83,7 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>();
     await DeviceSecuritySchema.InitializeAsync(dbContext);
+    await FamilySharingSchema.InitializeAsync(dbContext);
     Directory.CreateDirectory(scope.ServiceProvider.GetRequiredService<StoragePathResolver>().StorageRoot);
 }
 
@@ -104,6 +103,8 @@ app.Use(async (context, next) =>
 
 app.MapServerEndpoints();
 app.MapGoogleAuthEndpoints();
+app.MapFamilyEndpoints();
+app.MapJoinLanding();
 app.MapPortal();
 app.MapGet("/health", async (PhotoSyncDbContext db) =>
     await db.Database.CanConnectAsync() ? Results.Ok(new { status = "ok", service = "photosync", protocol_version = 2 }) : Results.StatusCode(503)).AllowAnonymous();
@@ -111,23 +112,7 @@ app.MapAdminEndpoints();
 app.MapDeviceEndpoints();
 app.MapAlbumEndpoints();
 app.MapFileEndpoints();
-app.MapGet("/api/stats/summary", async (PhotoSyncDbContext dbContext, CancellationToken cancellationToken) =>
-{
-    var deviceCount = await dbContext.Devices.CountAsync(cancellationToken);
-    var fileCount = await dbContext.Files.CountAsync(cancellationToken);
-    var bytesTotal = await dbContext.Files.SumAsync(x => (long?)x.SizeBytes, cancellationToken) ?? 0;
-    var videoCount = await dbContext.Files.CountAsync(x => x.IsVideo, cancellationToken);
-    var photoCount = fileCount - videoCount;
-
-    return Results.Ok(new
-    {
-        device_count = deviceCount,
-        file_count = fileCount,
-        photo_count = photoCount,
-        video_count = videoCount,
-        bytes_total = bytesTotal
-    });
-});
+app.MapStatsEndpoints();
 
 app.Run();
 

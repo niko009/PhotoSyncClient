@@ -18,8 +18,8 @@ android {
         applicationId = "com.photosync.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.3.0-beta"
+        versionCode = 4
+        versionName = "0.4.0-beta"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://photosync.bacus.dev\"")
         // Public OAuth identifier. Never place the Google client_secret in an APK.
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"221018828266-g4jt660ltqoaf2oniuolc82i3m1mpoee.apps.googleusercontent.com\"")
@@ -95,6 +95,7 @@ dependencies {
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.google.identity.googleid)
+    implementation("com.google.zxing:core:3.5.3")
     implementation(composeBom)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

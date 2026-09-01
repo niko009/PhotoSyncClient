@@ -9,6 +9,9 @@ public sealed record FileCheckRequest(
     [property: JsonPropertyName("size_bytes")] long SizeBytes,
     [property: JsonPropertyName("sha256")] string Sha256);
 
+public sealed record AlbumFileCheckRequest(
+    [property: JsonPropertyName("sha256")] string Sha256);
+
 public sealed record FileCheckResponse(
     [property: JsonPropertyName("exists")] bool Exists,
     [property: JsonPropertyName("server_file_id")] int? ServerFileId = null,

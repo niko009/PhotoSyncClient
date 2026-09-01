@@ -12,6 +12,10 @@ public sealed class StoredFileEntity
 
     public AlbumEntity Album { get; set; } = null!;
 
+    public int? UploaderUserId { get; set; }
+
+    public UserEntity? UploaderUser { get; set; }
+
     public string OriginalName { get; set; } = string.Empty;
 
     public string StoredName { get; set; } = string.Empty;
@@ -35,4 +39,8 @@ public sealed class StoredFileEntity
     public string RelativePath { get; set; } = string.Empty;
 
     public DateTimeOffset UploadedAtUtc { get; set; }
+
+    // User-facing removal is logical only. A committed original referenced by
+    // RelativePath is immutable and must remain on storage.
+    public DateTimeOffset? ArchivedAtUtc { get; set; }
 }
