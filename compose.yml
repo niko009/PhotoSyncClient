@@ -28,6 +28,10 @@ services:
       - photosync-data:/data
       # Windows folder mounted in Ubuntu through VirtualBox Shared Folders.
       - /mnt/server:/storage
+    # /mnt/server is mounted as gid=1000 on the Bacus Ubuntu host. The app
+    # remains non-root but receives that group as a supplementary group.
+    group_add:
+      - "${PHOTOSYNC_STORAGE_GID:-1000}"
     # Only the Bacus reverse proxy should reach this port; no host port binding.
     expose:
       - "8080"
