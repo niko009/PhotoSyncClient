@@ -12,6 +12,7 @@ public static class AlbumEndpoints
     {
         var group = endpoints.MapGroup("/api/albums");
         group.MapGet("/", ListAsync);
+        group.MapGet("/accessible", ListAccessibleAsync);
         group.MapPost("/", CreateAsync);
         group.MapPut("/{albumId:int}/sharing", UpdateSharingAsync);
         group.MapPost("/{albumId:int}/archive", ArchiveAsync);
@@ -44,6 +45,29 @@ public static class AlbumEndpoints
             return Results.NotFound(ApiProblems.NotFound("DEVICE_NOT_FOUND", "Device was not found."));
 
         return Results.Ok(new AlbumsResponse(visible));
+    }
+
+    private static async Task<IResult> ListAccessibleAsync(PhotoSyncDbContext db, FolderAccessService access, CancellationToken ct)
+    {
+        var candidates = await db.Albums.IgnoreQueryFilters().AsNoTracking()
+            .Where(x => x.ArchivedAtUtc == null)
+            .OrderBy(x => x.AlbumName)
+            .ToListAsync(ct);
+        var result = new List<AccessibleAlbumItem>();
+        foreach (var album in candidates)
+        {
+            var permission = await access.GetPermissionAsync(album, ct);
+            if (permission < FolderPermission.View) continue;
+            result.Add(new AccessibleAlbumItem(
+                album.Id,
+                album.AlbumName,
+                permission.ToString(),
+                album.SharingMode.ToString(),
+                permission == FolderPermission.Owner));
+        }
+        // Deliberately returns no device UUID/name, physical path, owner email,
+        // counters, or storage metadata for another family member.
+        return Results.Ok(new AccessibleAlbumsResponse(result));
     }
 
     private static async Task<IResult> CreateAsync(CreateAlbumRequest request, PhotoSyncDbContext dbContext,
