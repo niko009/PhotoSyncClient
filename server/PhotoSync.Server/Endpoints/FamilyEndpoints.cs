@@ -196,7 +196,7 @@ public static class FamilyEndpoints
         int.TryParse(context.User.FindFirstValue(DeviceAuthentication.UserClaim), out var id) ? id : null;
 
     internal static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
-    internal static string HashToken(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    public static string HashToken(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     private static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     private static bool IsValidEmail(string email)
     {
