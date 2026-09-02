@@ -33,3 +33,9 @@ public sealed record UpdateAlbumSharingRequest(
     [property: JsonPropertyName("mode")] string Mode,
     [property: JsonPropertyName("family_permission")] string? FamilyPermission,
     [property: JsonPropertyName("selected_people")] IReadOnlyDictionary<int, string>? SelectedPeople);
+
+public sealed record AlbumSharingResponse(
+    [property: JsonPropertyName("album_id")] int AlbumId,
+    [property: JsonPropertyName("mode")] string Mode,
+    [property: JsonPropertyName("family_permission")] string FamilyPermission,
+    [property: JsonPropertyName("selected_people")] IReadOnlyDictionary<int, string> SelectedPeople);
