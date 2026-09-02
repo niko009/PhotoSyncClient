@@ -27,12 +27,12 @@ SMTP и собственный email server не используются.
 3. Клиент получает raw token только в URL. В SQLite хранится только SHA-256 hash токена.
 4. Срок действия — 7 дней; приглашение одноразовое и может быть отозвано Owner.
 5. Android показывает стандартный Share Sheet, Copy Link и QR. WhatsApp/Telegram не захардкожены.
-6. `/join/<token>` — минимальная публичная landing page без данных семьи. Она предлагает открыть PhotoSync через `photosync://join/<token>`.
+6. `/join/<token>` — минимальная публичная landing page без данных семьи. На Android она предлагает открыть PhotoSync через package-targeted intent, а при отсутствии приложения ведёт на APK. На компьютере страница объясняет, что приглашение нужно открыть на Android.
 7. При принятии Android выполняет Google Sign-In. Сервер повторно проверяет Google token, `sub` и verified email. Email из тела запроса не является доказательством личности.
 8. Verified email должен в точности совпасть с `ExpectedEmail`; при ошибочном аккаунте возвращается masked expected email.
 9. Принятие выполняется транзакционно. Повторно использованный, expired или revoked token отклоняется; unique membership не позволяет создать дубль.
 
-Verified Android App Links для произвольного self-hosted домена не обязательны в 0.4: используется безопасный web landing + custom scheme. Для `photosync.bacus.dev/join/*` Android также зарегистрирован как HTTPS deep-link target; полноценный `assetlinks.json`/deferred deep-link можно добавить после фиксации production signing certificate.
+Для `photosync.bacus.dev/join/*` включены Verified Android App Links. Сервер анонимно публикует `/.well-known/assetlinks.json`, связанный с production package `com.photosync.android` и SHA-256 постоянного release-сертификата Bacus Lab. Android manifest запрашивает автоматическую проверку домена. Без установленного приложения или на неподдерживаемом браузере остаётся безопасная landing page с APK fallback; полноценный deferred deep linking не входит в 0.4.
 
 ## Folder privacy и ACL
 
