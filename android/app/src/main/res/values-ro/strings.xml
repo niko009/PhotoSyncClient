@@ -5,6 +5,7 @@
     <string name="folder_name">Numele dosarului</string>
     <string name="create">Creeaza</string>
     <string name="cancel">Anuleaza</string>
+    <string name="done">Gata</string>
     <string name="settings">Setari</string>
     <string name="upload_queue">Coada de incarcare</string>
     <string name="auto_sync_enabled">Sincronizarea automata este activata</string>
@@ -54,4 +55,13 @@
     <string name="policy_remove_after_sync">Elimina originalul dupa sincronizare</string>
     <string name="policy_follow_global">Urmeaza setarea globala</string>
     <string name="policy_no_folder_override">Fara suprascriere pentru dosar</string>
+    <string name="share_import_title">Adauga in PhotoSync</string>
+    <string name="share_import_count">Selectate: %1$d</string>
+    <string name="share_import_choose_folder">Alege un dosar</string>
+    <string name="share_import_hint">Originalele raman in galeria telefonului. PhotoSync incarca copii pe serverul tau.</string>
+    <string name="share_import_no_folders">Nu exista inca dosare PhotoSync. Creeaza unul si incarca fotografiile sau videoclipurile selectate.</string>
+    <string name="share_import_progress">Procesate %1$d din %2$d</string>
+    <string name="share_import_upload">Incarca in dosarul selectat</string>
+    <string name="share_import_new_folder">Dosar nou</string>
+    <string name="share_import_create_and_upload">Creeaza si incarca</string>
 </resources>
