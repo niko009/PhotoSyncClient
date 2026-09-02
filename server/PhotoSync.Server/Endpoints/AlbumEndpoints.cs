@@ -13,6 +13,7 @@ public static class AlbumEndpoints
         var group = endpoints.MapGroup("/api/albums");
         group.MapGet("/", ListAsync);
         group.MapGet("/accessible", ListAccessibleAsync);
+        group.MapGet("/{albumId:int}/sharing", GetSharingAsync);
         group.MapPost("/", CreateAsync);
         group.MapPut("/{albumId:int}/sharing", UpdateSharingAsync);
         group.MapPost("/{albumId:int}/archive", ArchiveAsync);
@@ -65,6 +66,24 @@ public static class AlbumEndpoints
                 permission == FolderPermission.Owner));
         }
         return Results.Ok(new AccessibleAlbumsResponse(result));
+    }
+
+    private static async Task<IResult> GetSharingAsync(int albumId, PhotoSyncDbContext db,
+        FolderAccessService access, CancellationToken ct)
+    {
+        var album = await db.Albums.IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == albumId && x.ArchivedAtUtc == null, ct);
+        if (album is null || !await access.CanManageAsync(album, ct)) return Results.NotFound();
+
+        var selectedPeople = await db.FolderAcls.AsNoTracking()
+            .Where(x => x.AlbumId == album.Id)
+            .ToDictionaryAsync(x => x.UserId, x => x.Permission.ToString(), ct);
+
+        return Results.Ok(new AlbumSharingResponse(
+            album.Id,
+            album.SharingMode.ToString(),
+            album.FamilyPermission.ToString(),
+            selectedPeople));
     }
 
     private static async Task<IResult> CreateAsync(CreateAlbumRequest request, PhotoSyncDbContext dbContext,
