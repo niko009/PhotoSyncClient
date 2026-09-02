@@ -84,7 +84,23 @@ using (var scope = app.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>();
     await DeviceSecuritySchema.InitializeAsync(dbContext);
     await FamilySharingSchema.InitializeAsync(dbContext);
-    Directory.CreateDirectory(scope.ServiceProvider.GetRequiredService<StoragePathResolver>().StorageRoot);
+
+    var pathResolver = scope.ServiceProvider.GetRequiredService<StoragePathResolver>();
+    Directory.CreateDirectory(pathResolver.StorageRoot);
+
+    // Existing database rows may predate a temporary storage outage. Ensure every
+    // active album has its physical directory before accepting requests. This also
+    // makes storage permission/mount problems fail fast during container startup.
+    var activeAlbums = await dbContext.Albums.IgnoreQueryFilters()
+        .AsNoTracking()
+        .Include(x => x.Device)
+        .Where(x => x.ArchivedAtUtc == null)
+        .ToListAsync();
+    foreach (var album in activeAlbums)
+    {
+        var relativePath = pathResolver.GetAlbumRelativeDirectory(album.Device, album);
+        Directory.CreateDirectory(pathResolver.ToAbsolutePath(relativePath));
+    }
 }
 
 app.UseAuthentication();
