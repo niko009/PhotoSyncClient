@@ -10,6 +10,7 @@ interface AppContainer {
 
 class DefaultAppContainer(
     private val context: Context,
+    private val observeNetworkChanges: Boolean = true,
 ) : AppContainer {
     private val preferencesStore by lazy { PreferencesStore(context) }
     private val deviceIdentity by lazy { DeviceIdentity(context) }
@@ -29,7 +30,9 @@ class DefaultAppContainer(
             context = context,
             delegate = legacyRetryRepository,
         )
-        NetworkSyncObserver(context, offlineFirstRepository).start()
+        if (observeNetworkChanges) {
+            NetworkSyncObserver(context, offlineFirstRepository).start()
+        }
         offlineFirstRepository
     }
 }
