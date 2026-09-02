@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_available_title">Actualizare PhotoSync</string>
+    <string name="update_available_body">Versiunea %1$s este disponibilă. PhotoSync o poate descărca automat.</string>
+    <string name="update_downloading">Se descarcă PhotoSync %1$s…</string>
+    <string name="update_ready">PhotoSync %1$s este gata pentru instalare. Android poate cere confirmarea actualizării.</string>
+    <string name="update_now">Actualizează</string>
+    <string name="update_later">Mai târziu</string>
+    <string name="install_update">Instalează</string>
+    <string name="update_failed">Actualizarea nu a putut fi descărcată sau verificată. Poți încerca din nou.</string>
+</resources>
