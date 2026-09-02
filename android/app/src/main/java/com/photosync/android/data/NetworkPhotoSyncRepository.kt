@@ -286,12 +286,13 @@ class NetworkPhotoSyncRepository(
         }
     }
 
-    private suspend fun uploadToFolderInternal(folderId: String, uri: Uri) {
+    private suspend fun uploadToFolderInternal(folderId: String, uri: Uri): Boolean {
         var attemptedPhotoId: String? = null
-        runCatching {
+        return runCatching {
             withContext(Dispatchers.IO) {
-                val folder = folderDetails.value[folderId] ?: return@withContext
-                val fileBytes = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@withContext
+                val folder = folderDetails.value[folderId] ?: error("Upload folder was not found.")
+                val fileBytes = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: error("Shared media could not be opened.")
                 val mimeType = appContext.contentResolver.getType(uri) ?: "application/octet-stream"
                 val originalName = resolveDisplayName(uri) ?: "upload-${System.currentTimeMillis()}"
                 val sha256 = fileBytes.sha256()
@@ -346,6 +347,7 @@ class NetworkPhotoSyncRepository(
                 stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Offline)
                 Log.e(TAG, "Upload failed for folderId=$folderId", error)
             }
+            .isSuccess
     }
 
     companion object {

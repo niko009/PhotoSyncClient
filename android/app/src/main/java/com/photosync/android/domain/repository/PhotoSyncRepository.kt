@@ -21,7 +21,7 @@ interface PhotoSyncRepository {
     suspend fun updateGlobalPhotoCleanupPolicy(policy: PhotoCleanupPolicy)
     suspend fun updateFolderPhotoCleanupPolicy(folderId: String, policy: PhotoCleanupPolicy?)
     suspend fun addFolder(name: String)
-    suspend fun uploadToFolder(folderId: String, uri: Uri)
+    suspend fun uploadToFolder(folderId: String, uri: Uri): Boolean
     suspend fun downloadPhoto(folderId: String, photoId: String)
     suspend fun deletePhoto(folderId: String, photoId: String)
     suspend fun signInWithGoogle(idToken: String)

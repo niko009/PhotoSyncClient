@@ -36,7 +36,7 @@ public sealed class JoinLandingTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains("intent://join/abcdefghijklmnopqrstuvwxyz#Intent;scheme=photosync;package=com.photosync.android;", html);
-        Assert.Contains("photosync-android-0.4.0-beta.apk", html);
+        Assert.Contains("photosync-android-0.5.0-beta.apk", html);
         Assert.Contains("На компьютере приложение открыть нельзя", html);
     }
 }

@@ -141,7 +141,7 @@ class ShareImportViewModel(
         }
 
         uris.forEachIndexed { index, uri ->
-            repository.uploadToFolder(folderId, uri)
+            check(repository.uploadToFolder(folderId, uri)) { "Import failed." }
             _state.update { it.copy(processedCount = index + 1) }
         }
         repository.refresh()

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.update
 
 class FakePhotoSyncRepository(
     seedFolders: List<FolderRecord> = sampleFolders(),
+    private val uploadSucceeds: Boolean = true,
 ) : PhotoSyncRepository {
 
     private val folders = MutableStateFlow(seedFolders)
@@ -87,7 +88,8 @@ class FakePhotoSyncRepository(
         }
     }
 
-    override suspend fun uploadToFolder(folderId: String, uri: Uri) {
+    override suspend fun uploadToFolder(folderId: String, uri: Uri): Boolean {
+        if (!uploadSucceeds) return false
         folders.update { current ->
             current.map { record ->
                 if (record.id != folderId) {
@@ -105,6 +107,7 @@ class FakePhotoSyncRepository(
                 }
             }
         }
+        return true
     }
 
     override suspend fun downloadPhoto(folderId: String, photoId: String) = Unit

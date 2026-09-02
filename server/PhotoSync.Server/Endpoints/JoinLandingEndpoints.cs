@@ -7,7 +7,7 @@ public static class JoinLandingEndpoints
 {
     private const string AndroidPackageName = "com.photosync.android";
     private const string AndroidCertificateSha256 = "0D:35:39:A6:6B:59:38:B4:CA:BB:D7:D7:6A:CE:E2:86:87:7A:5E:46:64:8B:4B:8C:6D:42:36:F5:C8:B9:86:2D";
-    private const string AndroidDownloadUrl = "https://bacus.dev/downloads/photosync/photosync-android-0.4.0-beta.apk?v=8cdd0beeb864";
+    private const string AndroidDownloadUrl = "https://bacus.dev/downloads/photosync/photosync-android-0.5.0-beta.apk?v=b643cfaa2507";
 
     public static IEndpointRouteBuilder MapJoinLanding(this IEndpointRouteBuilder endpoints)
     {
