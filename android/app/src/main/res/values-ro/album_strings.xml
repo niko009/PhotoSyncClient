@@ -14,10 +14,10 @@
     <string name="album_home_title">Momente de păstrat</string>
     <string name="album_tagline">Amintirile dvs. Propriul server.</string>
     <string name="album_my_folders">Albumele mele</string>
-    <string name="album_private">Doar acest telefon</string>
+    <string name="album_private">Doar eu</string>
     <string name="album_empty_title">Un loc pentru amintiri</string>
     <string name="album_empty_body">Creați primul album și adăugați fotografiile preferate.</string>
-    <string name="album_private_hint">Album privat pentru această instalare. Nu este necesar un cont Google.</string>
+    <string name="album_private_hint">Albumele noi sunt private implicit. Autentificați-vă cu Google pentru a partaja doar albumele alese cu familia.</string>
     <string name="album_settings_title">Simțiți-vă ca acasă</string>
     <string name="album_device_access">Acces fără cont</string>
     <string name="album_device_access_body">O cheie privată este creată automat pe telefon. ID-ul singur nu oferă acces la fotografii.</string>
@@ -28,7 +28,7 @@
     <string name="album_cleanup_warning">Aplicația va încerca să șteargă originalul după încărcare. Android poate refuza ștergerea. Păstrați și o altă copie de rezervă.</string>
     <string name="album_by_lab">Un album foto personal de la Bacus Lab.</string>
     <string name="album_language_system">Limba urmează setările sistemului.</string>
-    <string name="album_family_later">Accesul familiei este planificat, dar nu este încă activat.</string>
+    <string name="album_family_later">Partajarea în familie este disponibilă membrilor conectați cu Google.</string>
     <string name="google_account">Cont Google</string>
     <string name="google_account_help">Opțional. Autentificați-vă pentru a restabili accesul și a combina arhiva telefoanelor cu același cont Google.</string>
     <string name="google_sign_in">Continuați cu Google</string>
@@ -42,4 +42,17 @@
     <string name="album_download_original">Descărcați originalul în aplicație</string>
     <string name="album_remove_local">Eliminați din lista locală</string>
     <string name="album_remove_help">Se elimină intrarea și miniatura, nu originalul din galerie sau de pe server. Fotografia poate reapărea după actualizare.</string>
+    <string name="album_access_button">Acces la dosar</string>
+    <string name="album_access_title">Acces la dosar</string>
+    <string name="album_access_help">Alegeți exact cine poate vedea acest album. Apartenența la familie nu deschide automat fotografiile private.</string>
+    <string name="album_access_private">Doar eu</string>
+    <string name="album_access_family">Toată familia</string>
+    <string name="album_access_selected">Persoane selectate</string>
+    <string name="album_access_family_status">Partajat cu familia</string>
+    <string name="album_access_selected_status">Partajat cu persoane selectate</string>
+    <string name="album_access_permission">Permisiune</string>
+    <string name="album_access_view">Doar vizualizare</string>
+    <string name="album_access_contribute">Vizualizare + adăugare fotografii</string>
+    <string name="album_access_members">Membrii familiei</string>
+    <string name="album_access_no_members">Nu există încă alți membri. Creați mai întâi o invitație în secțiunea Familie.</string>
 </resources>
