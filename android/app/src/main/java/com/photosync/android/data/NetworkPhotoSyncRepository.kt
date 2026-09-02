@@ -155,8 +155,27 @@ class NetworkPhotoSyncRepository(
                 val accessibleAlbums = apiClient.getAccessibleAlbums()
                 val accessibleById = accessibleAlbums.associateBy { it.albumId }
                 val sharedAlbums = accessibleAlbums.filterNot { it.ownedByMe }
-                val serverAlbums = visibleDevices.flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
+                var serverAlbums = visibleDevices.flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
                     .distinctBy { it.name }
+
+                val knownServerAlbumNames = serverAlbums.map { it.name }.toSet()
+                val missingLocalFolders = localFolders.value.values.filter { it.name !in knownServerAlbumNames }
+                var recoveredPendingFolder = false
+                missingLocalFolders.forEach { localFolder ->
+                    runCatching {
+                        apiClient.createAlbum(deviceUuid = deviceUuid, albumName = localFolder.name)
+                    }.onSuccess {
+                        recoveredPendingFolder = true
+                        Log.i(TAG, "Recovered pending server folder ${localFolder.name}")
+                    }.onFailure { error ->
+                        Log.e(TAG, "Pending server folder retry failed for ${localFolder.name}", error)
+                    }
+                }
+                if (recoveredPendingFolder) {
+                    serverAlbums = visibleDevices.flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
+                        .distinctBy { it.name }
+                }
+
                 val serverFiles = visibleDevices.flatMap { device -> apiClient.getFiles(device.id) }
                     .groupBy { it.albumName }
                 val previousDetails = folderDetails.value
