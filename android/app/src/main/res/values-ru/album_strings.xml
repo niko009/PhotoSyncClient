@@ -14,10 +14,10 @@
     <string name="album_home_title">Моменты, которые рядом</string>
     <string name="album_tagline">Ваши воспоминания. Ваш собственный сервер.</string>
     <string name="album_my_folders">Мои альбомы</string>
-    <string name="album_private">Только этот телефон</string>
+    <string name="album_private">Только я</string>
     <string name="album_empty_title">Место для ваших воспоминаний</string>
     <string name="album_empty_body">Создайте первый альбом и добавьте любимые фотографии.</string>
-    <string name="album_private_hint">Альбом доступен только этой установке приложения. Google-аккаунт не нужен.</string>
+    <string name="album_private_hint">Новые альбомы приватны по умолчанию. Войдите через Google, чтобы делиться выбранными альбомами с семьёй.</string>
     <string name="album_settings_title">Всё по-домашнему</string>
     <string name="album_device_access">Доступ без аккаунта</string>
     <string name="album_device_access_body">На телефоне автоматически создаётся секретный ключ. Одного знания ID недостаточно для доступа к фотографиям.</string>
@@ -28,7 +28,7 @@
     <string name="album_cleanup_warning">После загрузки приложение попытается удалить выбранный оригинал. Android может запретить удаление. Сохраняйте ещё одну резервную копию.</string>
     <string name="album_by_lab">Личный фотоальбом от Bacus Lab.</string>
     <string name="album_language_system">Язык выбирается по настройкам системы.</string>
-    <string name="album_family_later">Семейный доступ пока не подключён.</string>
+    <string name="album_family_later">Семейный доступ доступен участникам семьи, вошедшим через Google.</string>
     <string name="google_account">Google-аккаунт</string>
     <string name="google_account_help">Необязательно. Войдите, чтобы восстановить доступ и объединить архив телефонов с одним Google-аккаунтом.</string>
     <string name="google_sign_in">Продолжить с Google</string>
@@ -42,4 +42,17 @@
     <string name="album_download_original">Скачать оригинал в приложение</string>
     <string name="album_remove_local">Убрать из локального списка</string>
     <string name="album_remove_help">Будет удалена запись из списка и миниатюра, но не оригинал в галерее или на сервере. Серверное фото может появиться снова после обновления.</string>
+    <string name="album_access_button">Доступ к папке</string>
+    <string name="album_access_title">Доступ к папке</string>
+    <string name="album_access_help">Выберите, кто именно видит этот альбом. Само членство в семье не открывает приватные фотографии.</string>
+    <string name="album_access_private">Только я</string>
+    <string name="album_access_family">Вся семья</string>
+    <string name="album_access_selected">Выбранные люди</string>
+    <string name="album_access_family_status">Доступен всей семье</string>
+    <string name="album_access_selected_status">Доступен выбранным людям</string>
+    <string name="album_access_permission">Права доступа</string>
+    <string name="album_access_view">Только просмотр</string>
+    <string name="album_access_contribute">Просмотр + добавление фото</string>
+    <string name="album_access_members">Члены семьи</string>
+    <string name="album_access_no_members">Других участников пока нет. Сначала создайте приглашение в разделе «Семья».</string>
 </resources>
