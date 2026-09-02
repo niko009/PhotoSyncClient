@@ -64,6 +64,13 @@ public sealed class FamilySharingTests
         (await owner.PutAsJsonAsync($"/api/albums/{album.AlbumId}/sharing",
             new UpdateAlbumSharingRequest("WholeFamily", "View", null))).EnsureSuccessStatusCode();
 
+        var ownerSharing = await owner.GetFromJsonAsync<AlbumSharingResponse>($"/api/albums/{album.AlbumId}/sharing");
+        Assert.NotNull(ownerSharing);
+        Assert.Equal("WholeFamily", ownerSharing!.Mode);
+        Assert.Equal("View", ownerSharing.FamilyPermission);
+        Assert.Empty(ownerSharing.SelectedPeople);
+        Assert.Equal(HttpStatusCode.NotFound, (await member.GetAsync($"/api/albums/{album.AlbumId}/sharing")).StatusCode);
+
         var visibleAlbums = await member.GetFromJsonAsync<AccessibleAlbumsResponse>("/api/albums/accessible");
         Assert.Contains(visibleAlbums!.Albums, x => x.AlbumId == album.AlbumId && x.Permission == "View");
         using (var deniedUpload = Upload(ownerUuid, "Family album", "member-photo", album.AlbumId))
@@ -118,6 +125,12 @@ public sealed class FamilySharingTests
         var albumId = (await created.Content.ReadFromJsonAsync<CreateAlbumResponse>())!.AlbumId;
         (await owner.PutAsJsonAsync($"/api/albums/{albumId}/sharing",
             new UpdateAlbumSharingRequest("SelectedPeople", null, new Dictionary<int, string> { [memberId] = "View" }))).EnsureSuccessStatusCode();
+
+        var sharing = await owner.GetFromJsonAsync<AlbumSharingResponse>($"/api/albums/{albumId}/sharing");
+        Assert.NotNull(sharing);
+        Assert.Equal("SelectedPeople", sharing!.Mode);
+        Assert.Equal("View", sharing.SelectedPeople[memberId]);
+
         var visibleAlbums = await member.GetFromJsonAsync<AccessibleAlbumsResponse>("/api/albums/accessible");
         Assert.Contains(visibleAlbums!.Albums, x => x.AlbumId == albumId && x.Permission == "View");
 
