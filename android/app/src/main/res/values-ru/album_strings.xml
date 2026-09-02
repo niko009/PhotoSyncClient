@@ -55,4 +55,7 @@
     <string name="album_access_contribute">Просмотр + добавление фото</string>
     <string name="album_access_members">Члены семьи</string>
     <string name="album_access_no_members">Других участников пока нет. Сначала создайте приглашение в разделе «Семья».</string>
+    <string name="album_shared_with_me_contribute">Доступен мне · можно добавлять фото</string>
+    <string name="album_shared_with_me_view">Доступен мне · только просмотр</string>
+    <string name="album_shared_view_hint">Этот альбом доступен только для просмотра. Попросите владельца включить добавление фото.</string>
 </resources>

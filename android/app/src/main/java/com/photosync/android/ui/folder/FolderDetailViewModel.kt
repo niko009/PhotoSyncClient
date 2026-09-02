@@ -47,7 +47,7 @@ data class FolderDetailUiState(
 class FolderDetailViewModel(
     private val folderId: String,
     private val repository: PhotoSyncRepository,
-    private val familyApi: FamilyApiClient,
+    private val familyApi: FamilyApiClient? = null,
 ) : ViewModel() {
     private val sharing = MutableStateFlow(FolderSharingUiState())
 
@@ -118,6 +118,7 @@ class FolderDetailViewModel(
     }
 
     fun saveSharing(mode: String, familyPermission: String, selectedPeople: Map<Int, String>) {
+        val api = familyApi ?: return
         val current = sharing.value
         val albumId = current.albumId ?: return
         if (current.isSaving) return
@@ -126,13 +127,13 @@ class FolderDetailViewModel(
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    familyApi.updateAlbumSharing(
+                    api.updateAlbumSharing(
                         albumId = albumId,
                         mode = mode,
                         familyPermission = familyPermission,
                         selectedPeople = if (mode == "SelectedPeople") selectedPeople else null,
                     )
-                    familyApi.getAlbumSharing(albumId)
+                    api.getAlbumSharing(albumId)
                 }
             }.onSuccess { settings ->
                 sharing.value = current.copy(
@@ -155,7 +156,8 @@ class FolderDetailViewModel(
     }
 
     private suspend fun loadSharing(identity: FolderIdentity) {
-        if (!identity.ownedByMe) {
+        val api = familyApi
+        if (!identity.ownedByMe || api == null) {
             sharing.value = FolderSharingUiState(isAvailable = false)
             return
         }
@@ -163,14 +165,14 @@ class FolderDetailViewModel(
         sharing.value = sharing.value.copy(isLoading = true, errorMessage = null)
         runCatching {
             withContext(Dispatchers.IO) {
-                val family = familyApi.getFamily()
+                val family = api.getFamily()
                 val albumId = identity.remoteAlbumId
-                    ?: familyApi.getCurrentDeviceAlbumId(identity.name)
-                    ?: familyApi.getAccessibleAlbums()
+                    ?: api.getCurrentDeviceAlbumId(identity.name)
+                    ?: api.getAccessibleAlbums()
                         .firstOrNull { it.ownedByMe && it.name == identity.name }
                         ?.albumId
                     ?: return@withContext null
-                val settings = familyApi.getAlbumSharing(albumId)
+                val settings = api.getAlbumSharing(albumId)
                 settings to family.members.filterNot { it.isCurrentUser }
             }
         }.onSuccess { result ->

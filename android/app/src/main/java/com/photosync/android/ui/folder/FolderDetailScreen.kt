@@ -33,6 +33,7 @@ import com.photosync.android.ui.settings.label
 import com.photosync.android.ui.theme.PhotoSyncTheme
 import kotlinx.coroutines.flow.StateFlow
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FolderDetailScreen(
     state: StateFlow<FolderDetailUiState>,
@@ -383,7 +384,6 @@ fun FolderDetailScreen(
                     enabled = !state.sharing.isSaving,
                     onClick = {
                         onSaveSharing(sharingModeDraft, familyPermissionDraft, selectedPeopleDraft)
-                        sharingOpen = false
                     },
                 ) {
                     Text(stringResource(R.string.save))
@@ -495,6 +495,7 @@ private fun SharingModeRow(selected: Boolean, label: String, onClick: () -> Unit
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun PermissionChips(permission: String, onChange: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChip(

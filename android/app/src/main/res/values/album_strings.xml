@@ -55,4 +55,7 @@
     <string name="album_access_contribute">View + add photos</string>
     <string name="album_access_members">Family members</string>
     <string name="album_access_no_members">No other family members yet. Create an invitation in Family settings first.</string>
+    <string name="album_shared_with_me_contribute">Shared with me · I can add photos</string>
+    <string name="album_shared_with_me_view">Shared with me · View only</string>
+    <string name="album_shared_view_hint">This album is view-only. Ask the owner for Contribute access to add photos.</string>
 </resources>

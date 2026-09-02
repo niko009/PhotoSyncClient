@@ -55,4 +55,7 @@
     <string name="album_access_contribute">Vizualizare + adăugare fotografii</string>
     <string name="album_access_members">Membrii familiei</string>
     <string name="album_access_no_members">Nu există încă alți membri. Creați mai întâi o invitație în secțiunea Familie.</string>
+    <string name="album_shared_with_me_contribute">Partajat cu mine · pot adăuga fotografii</string>
+    <string name="album_shared_with_me_view">Partajat cu mine · doar vizualizare</string>
+    <string name="album_shared_view_hint">Acest album este doar pentru vizualizare. Cereți proprietarului acces pentru adăugarea fotografiilor.</string>
 </resources>
