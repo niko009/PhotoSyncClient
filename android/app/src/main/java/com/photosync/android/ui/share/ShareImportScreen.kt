@@ -1,5 +1,6 @@
 package com.photosync.android.ui.share
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +55,10 @@ fun ShareImportScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var creatingFolder by rememberSaveable { mutableStateOf(false) }
     var folderName by rememberSaveable { mutableStateOf("") }
+
+    BackHandler {
+        if (!state.isUploading) onCancel()
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
