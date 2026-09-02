@@ -164,6 +164,7 @@ fun PhotoSyncApp(
                 factory = FolderDetailViewModel.Factory(
                     folderId = folderId,
                     repository = repository,
+                    familyApi = familyApi,
                 ),
             )
             FolderDetailScreen(
@@ -176,6 +177,8 @@ fun PhotoSyncApp(
                 onDeletePhoto = viewModel::deletePhoto,
                 onDownloadPhoto = viewModel::downloadPhoto,
                 onUpdateCleanupPolicy = viewModel::updateCleanupPolicy,
+                onSaveSharing = viewModel::saveSharing,
+                onRefreshSharing = viewModel::refreshSharing,
             )
         }
     }
