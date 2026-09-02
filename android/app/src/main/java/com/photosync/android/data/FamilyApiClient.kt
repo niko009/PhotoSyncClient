@@ -3,6 +3,7 @@ package com.photosync.android.data
 import android.os.Build
 import com.photosync.android.BuildConfig
 import com.photosync.android.domain.model.AccessibleAlbum
+import com.photosync.android.domain.model.AlbumSharingSettings
 import com.photosync.android.domain.model.FamilyInfo
 import com.photosync.android.domain.model.FamilyInvite
 import com.photosync.android.domain.model.FamilyMember
@@ -31,6 +32,24 @@ class FamilyApiClient(
                 ))
             }
         }
+    }
+
+    fun getAlbumSharing(albumId: Int): AlbumSharingSettings {
+        val json = request("/api/albums/$albumId/sharing", "GET")
+        val selectedJson = json.optJSONObject("selected_people") ?: JSONObject()
+        val selected = buildMap<Int, String> {
+            val keys = selectedJson.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                key.toIntOrNull()?.let { userId -> put(userId, selectedJson.getString(key)) }
+            }
+        }
+        return AlbumSharingSettings(
+            albumId = json.getInt("album_id"),
+            mode = json.getString("mode"),
+            familyPermission = json.getString("family_permission"),
+            selectedPeople = selected,
+        )
     }
 
     fun updateAlbumSharing(albumId: Int, mode: String, familyPermission: String = "View", selectedPeople: Map<Int, String>? = null) {
