@@ -19,7 +19,8 @@ import kotlinx.coroutines.sync.withLock
  * The underlying repository remains the source of truth. This wrapper retries
  * locally retained Failed/Pending/stale Uploading media after connectivity is
  * restored. A successful retry removes only the stale local queue item; the
- * server original is never deleted.
+ * server original is never deleted. Server uploads are SHA-256 deduplicated, so
+ * retrying after an uncertain network response does not create a second original.
  */
 class RetryingPhotoSyncRepository(
     private val delegate: PhotoSyncRepository,
@@ -49,12 +50,8 @@ class RetryingPhotoSyncRepository(
         val folders = delegate.observeFolders().first()
             .filter { it.ownedByMe }
 
-        folders.forEach { summary ->
-            val detail = delegate.observeFolder(summary.id).first() ?: return@forEach
-            val remoteTitles = detail.photos
-                .filter { it.serverFileId != null }
-                .map { it.title }
-                .toSet()
+        folders.forEach folderLoop@{ summary ->
+            val detail = delegate.observeFolder(summary.id).first() ?: return@folderLoop
 
             detail.photos
                 .filter { photo ->
@@ -62,16 +59,10 @@ class RetryingPhotoSyncRepository(
                         !photo.localUri.isNullOrBlank() &&
                         photo.status in RETRYABLE_STATUSES
                 }
-                .forEach { photo ->
-                    if (photo.title in remoteTitles) {
-                        // The server already has an item with this name. Remove only
-                        // the stale local queue record rather than uploading again.
-                        delegate.deletePhoto(summary.id, photo.id)
-                        return@forEach
-                    }
-
-                    val uri = runCatching { Uri.parse(photo.localUri) }.getOrNull()
-                        ?: return@forEach
+                .forEach photoLoop@{ photo ->
+                    val localUri = photo.localUri ?: return@photoLoop
+                    val uri = runCatching { Uri.parse(localUri) }.getOrNull()
+                        ?: return@photoLoop
                     val uploaded = runCatching {
                         delegate.uploadToFolder(summary.id, uri)
                     }.onFailure { error ->
