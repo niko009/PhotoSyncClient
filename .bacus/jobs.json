@@ -22,6 +22,17 @@
           "timeoutSeconds": 60
         }
       ]
+    },
+    "publish-release": {
+      "publicOutput": true,
+      "steps": [
+        {
+          "name": "build-sign-verify-publish",
+          "command": "node",
+          "args": ["scripts/build-publish-release.mjs"],
+          "timeoutSeconds": 1800
+        }
+      ]
     }
   }
 }
