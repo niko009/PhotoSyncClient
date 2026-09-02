@@ -11,6 +11,17 @@
           "timeoutSeconds": 60
         }
       ]
+    },
+    "check-signing": {
+      "publicOutput": true,
+      "steps": [
+        {
+          "name": "check-signing-readiness",
+          "command": "node",
+          "args": ["scripts/check-signing-readiness.mjs"],
+          "timeoutSeconds": 60
+        }
+      ]
     }
   }
 }
