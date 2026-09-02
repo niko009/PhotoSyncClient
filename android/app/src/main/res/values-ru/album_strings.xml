@@ -58,4 +58,6 @@
     <string name="album_shared_with_me_contribute">Доступен мне · можно добавлять фото</string>
     <string name="album_shared_with_me_view">Доступен мне · только просмотр</string>
     <string name="album_shared_view_hint">Этот альбом доступен только для просмотра. Попросите владельца включить добавление фото.</string>
+    <string name="album_folder_synced">Альбом синхронизирован с сервером</string>
+    <string name="album_folder_waiting_server">Ожидает сервер</string>
 </resources>
