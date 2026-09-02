@@ -38,13 +38,25 @@ public static class FamilyEndpoints
                 x.Role.ToString(), x.UserId == current.UserId))
             .ToListAsync(ct);
 
-        IReadOnlyList<FamilyInviteResponse> invites = current.Role == FamilyRole.Owner
-            ? await db.FamilyInvitations.AsNoTracking()
-                .Where(x => x.FamilyId == current.FamilyId && x.AcceptedAtUtc == null && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTimeOffset.UtcNow)
-                .OrderByDescending(x => x.CreatedAtUtc)
+        IReadOnlyList<FamilyInviteResponse> invites;
+        if (current.Role == FamilyRole.Owner)
+        {
+            // SQLite cannot translate DateTimeOffset comparisons. Filter the small
+            // per-family pending set in memory after applying all indexed predicates.
+            var now = DateTimeOffset.UtcNow;
+            var candidates = await db.FamilyInvitations.AsNoTracking()
+                .Where(x => x.FamilyId == current.FamilyId && x.AcceptedAtUtc == null && x.RevokedAtUtc == null)
+                .OrderByDescending(x => x.Id)
+                .ToListAsync(ct);
+            invites = candidates
+                .Where(x => x.ExpiresAtUtc > now)
                 .Select(x => new FamilyInviteResponse(x.Id, x.ExpectedEmail, x.ExpiresAtUtc, "Pending", null))
-                .ToListAsync(ct)
-            : Array.Empty<FamilyInviteResponse>();
+                .ToList();
+        }
+        else
+        {
+            invites = Array.Empty<FamilyInviteResponse>();
+        }
 
         var family = await db.Families.AsNoTracking().SingleAsync(x => x.Id == current.FamilyId, ct);
         return Results.Ok(new FamilyResponse(family.Id, family.Name, current.Role.ToString(), members, invites));
@@ -65,8 +77,12 @@ public static class FamilyEndpoints
             .AnyAsync(x => x.FamilyId == current.FamilyId && x.IsActive && x.User.GoogleEmail.ToLower() == email, ct);
         if (alreadyMember) return Results.Conflict(new { error = "already_member" });
 
-        var pending = await db.FamilyInvitations.AsNoTracking().AnyAsync(x => x.FamilyId == current.FamilyId &&
-            x.ExpectedEmail == email && x.AcceptedAtUtc == null && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTimeOffset.UtcNow, ct);
+        var pendingCandidates = await db.FamilyInvitations.AsNoTracking()
+            .Where(x => x.FamilyId == current.FamilyId && x.ExpectedEmail == email &&
+                x.AcceptedAtUtc == null && x.RevokedAtUtc == null)
+            .Select(x => x.ExpiresAtUtc)
+            .ToListAsync(ct);
+        var pending = pendingCandidates.Any(x => x > DateTimeOffset.UtcNow);
         if (pending) return Results.Conflict(new { error = "invite_already_pending" });
 
         var rawToken = Base64Url(RandomNumberGenerator.GetBytes(32));
@@ -132,7 +148,7 @@ public static class FamilyEndpoints
         // Atomic one-time claim. We deliberately claim before changing membership;
         // any later validation failure rolls the transaction back and leaves the invite usable.
         var claimed = await db.FamilyInvitations
-            .Where(x => x.Id == invite.Id && x.AcceptedAtUtc == null && x.RevokedAtUtc == null && x.ExpiresAtUtc > now)
+            .Where(x => x.Id == invite.Id && x.AcceptedAtUtc == null && x.RevokedAtUtc == null)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(x => x.AcceptedAtUtc, now)
                 .SetProperty(x => x.AcceptedByUserId, user.Id), ct);

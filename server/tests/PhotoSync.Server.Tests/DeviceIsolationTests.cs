@@ -78,7 +78,7 @@ public sealed class DeviceIsolationTests
         var fileA = (await responseA.Content.ReadFromJsonAsync<UploadFileResponse>())!;
         foreach (var action in new[] { "preview", "download" })
             Assert.Equal(HttpStatusCode.NotFound, (await b.GetAsync($"/api/files/{fileA.ServerFileId}/{action}")).StatusCode);
-        Assert.Empty((await b.GetFromJsonAsync<FileListResponse>($"/api/files/device/{idA}"))!.Files);
+        Assert.Equal(HttpStatusCode.NotFound, (await b.GetAsync($"/api/files/device/{idA}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await b.GetAsync($"/api/albums?device_uuid={uuidA}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await b.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(uuidA, "Stolen"))).StatusCode);
         using var maliciousUpload = Upload(uuidA);

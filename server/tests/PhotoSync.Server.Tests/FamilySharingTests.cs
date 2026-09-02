@@ -55,7 +55,7 @@ public sealed class FamilySharingTests
 
         var family = await owner.GetFromJsonAsync<FamilyResponse>("/api/family");
         Assert.Equal(2, family!.Members.Count);
-        Assert.Single(family.Members.Where(x => !x.IsCurrentUser && x.Email == "member@example.test"));
+        Assert.Single(family.Members, x => !x.IsCurrentUser && x.Email == "member@example.test");
         Assert.Empty(family.PendingInvites);
 
         var albumResponse = await owner.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(ownerUuid, "Family album"));
@@ -64,8 +64,9 @@ public sealed class FamilySharingTests
         (await owner.PutAsJsonAsync($"/api/albums/{album.AlbumId}/sharing",
             new UpdateAlbumSharingRequest("WholeFamily", "View", null))).EnsureSuccessStatusCode();
 
-        Assert.Equal(HttpStatusCode.OK, (await member.GetAsync($"/api/albums?device_uuid={ownerUuid}")).StatusCode);
-        using (var deniedUpload = Upload(ownerUuid, "Family album", "member-photo"))
+        var visibleAlbums = await member.GetFromJsonAsync<AccessibleAlbumsResponse>("/api/albums/accessible");
+        Assert.Contains(visibleAlbums!.Albums, x => x.AlbumId == album.AlbumId && x.Permission == "View");
+        using (var deniedUpload = Upload(ownerUuid, "Family album", "member-photo", album.AlbumId))
             Assert.Equal(HttpStatusCode.NotFound, (await member.PostAsync("/api/files/upload", deniedUpload)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await member.PutAsJsonAsync($"/api/albums/{album.AlbumId}/sharing",
@@ -74,7 +75,7 @@ public sealed class FamilySharingTests
         (await owner.PutAsJsonAsync($"/api/albums/{album.AlbumId}/sharing",
             new UpdateAlbumSharingRequest("WholeFamily", "Contribute", null))).EnsureSuccessStatusCode();
         UploadFileResponse uploaded;
-        using (var allowedUpload = Upload(ownerUuid, "Family album", "member-photo"))
+        using (var allowedUpload = Upload(ownerUuid, "Family album", "member-photo", album.AlbumId))
         {
             var response = await member.PostAsync("/api/files/upload", allowedUpload);
             response.EnsureSuccessStatusCode();
@@ -117,10 +118,12 @@ public sealed class FamilySharingTests
         var albumId = (await created.Content.ReadFromJsonAsync<CreateAlbumResponse>())!.AlbumId;
         (await owner.PutAsJsonAsync($"/api/albums/{albumId}/sharing",
             new UpdateAlbumSharingRequest("SelectedPeople", null, new Dictionary<int, string> { [memberId] = "View" }))).EnsureSuccessStatusCode();
-        Assert.Equal(HttpStatusCode.OK, (await member.GetAsync($"/api/albums?device_uuid={ownerUuid}")).StatusCode);
+        var visibleAlbums = await member.GetFromJsonAsync<AccessibleAlbumsResponse>("/api/albums/accessible");
+        Assert.Contains(visibleAlbums!.Albums, x => x.AlbumId == albumId && x.Permission == "View");
 
         (await owner.DeleteAsync($"/api/family/members/{memberId}")).EnsureSuccessStatusCode();
-        Assert.Equal(HttpStatusCode.NotFound, (await member.GetAsync($"/api/albums?device_uuid={ownerUuid}")).StatusCode);
+        var albumsAfterRemoval = await member.GetFromJsonAsync<AccessibleAlbumsResponse>("/api/albums/accessible");
+        Assert.DoesNotContain(albumsAfterRemoval!.Albums, x => x.AlbumId == albumId);
     }
 
     private static async Task<(int Id, Guid Uuid)> RegisterAndSignIn(HttpClient client, string googleToken)
@@ -135,13 +138,11 @@ public sealed class FamilySharingTests
         return (id, uuid);
     }
 
-    private static MultipartFormDataContent Upload(Guid targetUuid, string album, string content)
+    private static MultipartFormDataContent Upload(Guid targetUuid, string album, string content, int? targetAlbumId = null)
     {
         var bytes = Encoding.UTF8.GetBytes(content);
-        return new MultipartFormDataContent
+        var form = new MultipartFormDataContent
         {
-            { new StringContent(targetUuid.ToString()), "device_uuid" },
-            { new StringContent(album), "album_name" },
             { new StringContent("photo.jpg"), "original_name" },
             { new StringContent("image/jpeg"), "mime_type" },
             { new StringContent(bytes.Length.ToString()), "size_bytes" },
@@ -149,6 +150,16 @@ public sealed class FamilySharingTests
             { new StringContent("2026-09-01T12:00:00Z"), "created_at" },
             { new ByteArrayContent(bytes), "file", "photo.jpg" }
         };
+        if (targetAlbumId is int albumId)
+        {
+            form.Add(new StringContent(albumId.ToString()), "album_id");
+        }
+        else
+        {
+            form.Add(new StringContent(targetUuid.ToString()), "device_uuid");
+            form.Add(new StringContent(album), "album_name");
+        }
+        return form;
     }
 
     private sealed class FamilyGoogleVerifier : IGoogleTokenVerifier

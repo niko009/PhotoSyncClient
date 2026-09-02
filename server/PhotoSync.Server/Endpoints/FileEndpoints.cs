@@ -134,7 +134,8 @@ public static class FileEndpoints
 
         var files = await db.Files.IgnoreQueryFilters().AsNoTracking().Include(x => x.Album)
             .Where(x => x.DeviceId == deviceId && x.ArchivedAtUtc == null && x.Album.ArchivedAtUtc == null)
-            .OrderBy(x => x.Album.AlbumName).ThenByDescending(x => x.UploadedAtUtc)
+            // SQLite cannot translate DateTimeOffset ordering. IDs preserve upload order.
+            .OrderBy(x => x.Album.AlbumName).ThenByDescending(x => x.Id)
             .ToListAsync(ct);
         return Results.Ok(new FileListResponse(files.Select(ToListItem).ToList()));
     }
@@ -149,7 +150,7 @@ public static class FileEndpoints
 
         var files = await db.Files.IgnoreQueryFilters().AsNoTracking()
             .Where(x => x.AlbumId == albumId && x.ArchivedAtUtc == null)
-            .OrderByDescending(x => x.UploadedAtUtc)
+            .OrderByDescending(x => x.Id)
             .ToListAsync(ct);
         return Results.Ok(new FileListResponse(files.Select(x => new FileListItem(x.Id, album.AlbumName, x.OriginalName,
             x.RelativePath, x.MimeType, x.SizeBytes, x.UploadedAtUtc,
