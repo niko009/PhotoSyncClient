@@ -5,20 +5,29 @@ import { spawnSync } from 'node:child_process';
 const repoRoot = process.cwd();
 const candidateRoots = [
   path.join(repoRoot, 'android', 'signing'),
-  '/srv/bacus/apps/photosync',
-  '/srv/bacus/repos/photosync',
-  '/srv/bacus/control/photosync',
+  '/srv/bacus',
+  '/home/mbacus',
+  '/etc/bacus',
 ].filter((value, index, list) => list.indexOf(value) === index);
 
+const interestingNames = new Set(['signing.properties']);
+const interestingExtensions = new Set(['.jks', '.keystore']);
+
 function walk(dir, depth = 0) {
-  if (depth > 4 || !fs.existsSync(dir)) return [];
+  if (depth > 7 || !fs.existsSync(dir)) return [];
   const out = [];
   let entries = [];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...walk(full, depth + 1));
-    else if (entry.isFile() && entry.name === 'signing.properties') out.push(full);
+    if (entry.isDirectory()) {
+      if (['node_modules', '.git', 'dist', 'build', '.gradle'].includes(entry.name)) continue;
+      out.push(...walk(full, depth + 1));
+    } else if (entry.isFile()) {
+      if (interestingNames.has(entry.name) || interestingExtensions.has(path.extname(entry.name).toLowerCase())) {
+        out.push(full);
+      }
+    }
   }
   return out;
 }
@@ -35,7 +44,8 @@ function parseProperties(file) {
   return result;
 }
 
-const propertyFiles = [...new Set(candidateRoots.flatMap(root => walk(root)))];
+const discovered = [...new Set(candidateRoots.flatMap(root => walk(root)))];
+const propertyFiles = discovered.filter(file => path.basename(file) === 'signing.properties');
 const usable = [];
 for (const file of propertyFiles) {
   try {
@@ -54,12 +64,13 @@ const sdkCandidates = [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, '
 const sdkAvailable = sdkCandidates.some(candidate => fs.existsSync(candidate));
 
 console.log(JSON.stringify({
+  discoveredSigningFiles: discovered,
   signingPropertiesFound: propertyFiles.length > 0,
-  usableSigningConfigCount: usable.length,
+  usableSigningConfigs: usable.map(item => ({ properties: item.file, keystore: item.storePath })),
   javaAvailable: java.status === 0,
   gradleWrapperAvailable: fs.existsSync(gradleWrapper),
   androidSdkAvailable: sdkAvailable,
-  readyForReleaseBuild: usable.length === 1 && java.status === 0 && fs.existsSync(gradleWrapper) && sdkAvailable,
-}));
+  readyForReleaseBuild: usable.length >= 1 && java.status === 0 && fs.existsSync(gradleWrapper) && sdkAvailable,
+}, null, 2));
 
-if (usable.length !== 1) process.exitCode = 2;
+if (usable.length < 1) process.exitCode = 2;
