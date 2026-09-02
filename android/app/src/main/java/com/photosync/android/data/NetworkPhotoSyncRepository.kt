@@ -15,6 +15,7 @@ import com.photosync.android.domain.model.PhotoCleanupPolicy
 import com.photosync.android.domain.model.PhotoItem
 import com.photosync.android.domain.model.PhotoSyncStatus
 import com.photosync.android.domain.repository.PhotoSyncRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,7 +26,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.CancellationException
 import com.photosync.android.domain.model.ConnectionStatus
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -152,6 +152,9 @@ class NetworkPhotoSyncRepository(
                 googleAccount.value = apiClient.googleAccount()
                 val summary = apiClient.getSummary()
                 val visibleDevices = apiClient.getDevices()
+                val accessibleAlbums = apiClient.getAccessibleAlbums()
+                val accessibleById = accessibleAlbums.associateBy { it.albumId }
+                val sharedAlbums = accessibleAlbums.filterNot { it.ownedByMe }
                 val serverAlbums = visibleDevices.flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
                     .distinctBy { it.name }
                 val serverFiles = visibleDevices.flatMap { device -> apiClient.getFiles(device.id) }
@@ -169,7 +172,7 @@ class NetworkPhotoSyncRepository(
                         serverFiles[localFolder.name].orEmpty(),
                         localFolder.id,
                     )
-                    val detail = localFolder.copy(photos = mergedPhotos)
+                    val detail = localFolder.copy(photos = mergedPhotos, ownedByMe = true)
                     details[detail.id] = detail
                     summaries[detail.id] = detail.toSummary()
                 }
@@ -185,18 +188,49 @@ class NetworkPhotoSyncRepository(
                         serverFiles[album.name].orEmpty(),
                         folderId,
                     )
+                    val access = accessibleById[album.id]
                     val detail = FolderDetail(
                         id = folderId,
                         name = album.name,
                         photos = mergedPhotos,
+                        remoteAlbumId = album.id,
+                        permission = access?.permission ?: "Owner",
+                        sharingMode = access?.sharingMode ?: "Private",
+                        ownedByMe = true,
                     )
-                    val folderSummary = detail.toSummary()
-                    details[folderId] = detail.copy(id = folderId)
-                    summaries[folderId] = folderSummary
+                    details[folderId] = detail
+                    summaries[folderId] = detail.toSummary()
                 }
 
-                localFolders.value = details.mapValues { (_, folder) -> folder.copy(photos = emptyList()) }
-                localPhotos.value = details.mapValues { (_, folder) -> folder.photos }
+                sharedAlbums.forEach { album ->
+                    val folderId = "shared-${album.albumId}"
+                    val previousPhotos = previousDetails[folderId]?.photos.orEmpty()
+                    val files = apiClient.getFilesForAlbum(album.albumId)
+                    val mergedPhotos = mergePhotos(
+                        previousPhotos = previousPhotos,
+                        localPhotos = localPhotos.value[folderId].orEmpty(),
+                        serverFiles = files,
+                        folderId = folderId,
+                    )
+                    val detail = FolderDetail(
+                        id = folderId,
+                        name = album.name,
+                        photos = mergedPhotos,
+                        remoteAlbumId = album.albumId,
+                        permission = album.permission,
+                        sharingMode = album.sharingMode,
+                        ownedByMe = false,
+                    )
+                    details[folderId] = detail
+                    summaries[folderId] = detail.toSummary()
+                }
+
+                val ownedDetails = details.filterValues { it.ownedByMe }
+                localFolders.value = ownedDetails.mapValues { (_, folder) -> folder.copy(photos = emptyList()) }
+                localPhotos.value = localPhotos.value.toMutableMap().apply {
+                    ownedDetails.forEach { (id, folder) -> put(id, folder.photos) }
+                    keys.retainAll(ownedDetails.keys + sharedAlbums.map { "shared-${it.albumId}" }.toSet())
+                }
                 persistLocalFolders()
                 persistLocalPhotos()
                 folderDetails.value = details
@@ -291,6 +325,7 @@ class NetworkPhotoSyncRepository(
         return runCatching {
             withContext(Dispatchers.IO) {
                 val folder = folderDetails.value[folderId] ?: error("Upload folder was not found.")
+                check(folder.canContribute) { "This shared album is view-only." }
                 val fileBytes = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: error("Shared media could not be opened.")
                 val mimeType = appContext.contentResolver.getType(uri) ?: "application/octet-stream"
@@ -308,17 +343,29 @@ class NetworkPhotoSyncRepository(
                     deviceName = deviceName,
                     appVersion = APP_VERSION,
                 )
-                apiClient.createAlbum(deviceUuid, folder.name)
-                val uploadResult = apiClient.uploadFile(
-                    deviceUuid = deviceUuid,
-                    albumName = folder.name,
-                    originalName = originalName,
-                    mimeType = mimeType,
-                    sizeBytes = fileBytes.size.toLong(),
-                    sha256 = sha256,
-                    createdAtIso = Instant.now().toString(),
-                    fileBytes = fileBytes,
-                )
+                val uploadResult = if (folder.remoteAlbumId != null) {
+                    apiClient.uploadFileToAlbum(
+                        albumId = folder.remoteAlbumId,
+                        originalName = originalName,
+                        mimeType = mimeType,
+                        sizeBytes = fileBytes.size.toLong(),
+                        sha256 = sha256,
+                        createdAtIso = Instant.now().toString(),
+                        fileBytes = fileBytes,
+                    )
+                } else {
+                    apiClient.createAlbum(deviceUuid, folder.name)
+                    apiClient.uploadFile(
+                        deviceUuid = deviceUuid,
+                        albumName = folder.name,
+                        originalName = originalName,
+                        mimeType = mimeType,
+                        sizeBytes = fileBytes.size.toLong(),
+                        sha256 = sha256,
+                        createdAtIso = Instant.now().toString(),
+                        fileBytes = fileBytes,
+                    )
+                }
                 updateLocalPhoto(
                     folderId,
                     PhotoItem(
@@ -440,7 +487,7 @@ class NetworkPhotoSyncRepository(
 
     private fun persistLocalFolders() {
         val payload = JSONArray()
-        localFolders.value.values.forEach { folder ->
+        localFolders.value.values.filter { it.ownedByMe }.forEach { folder ->
             payload.put(
                 JSONObject()
                     .put("id", folder.id)
@@ -456,7 +503,8 @@ class NetworkPhotoSyncRepository(
 
     private fun persistLocalPhotos() {
         val payload = JSONArray()
-        localPhotos.value.forEach { (folderId, photos) ->
+        val ownedFolderIds = localFolders.value.filterValues { it.ownedByMe }.keys
+        localPhotos.value.filterKeys { it in ownedFolderIds }.forEach { (folderId, photos) ->
             val photosArray = JSONArray()
             photos.forEach { photo ->
                 photosArray.put(
@@ -508,6 +556,7 @@ class NetworkPhotoSyncRepository(
     }
 
     private fun restoreLocalState() {
+        val sharedDetails = folderDetails.value.filterValues { !it.ownedByMe }
         val summaries = localFolders.value.values.map { folder ->
             val photos = localPhotos.value[folder.id].orEmpty()
             folder.copy(photos = photos).toSummary()
@@ -515,15 +564,19 @@ class NetworkPhotoSyncRepository(
         val details = localFolders.value.mapValues { (id, folder) ->
             folder.copy(photos = localPhotos.value[id].orEmpty())
         }
+        val sharedSummaries = sharedDetails.values.map { folder ->
+            val photos = localPhotos.value[folder.id] ?: folder.photos
+            folder.copy(photos = photos).toSummary()
+        }
 
-        folders.value = summaries
-        folderDetails.value = details
+        folders.value = summaries + sharedSummaries
+        folderDetails.value = details + sharedDetails
         stats.value = DashboardStats(
-            totalFolders = summaries.size,
-            totalPhotos = summaries.sumOf { it.photoCount },
-            syncedPhotos = summaries.sumOf { it.syncedCount },
-            pendingPhotos = summaries.sumOf { it.pendingCount },
-            failedPhotos = summaries.sumOf { it.failedCount },
+            totalFolders = folders.value.size,
+            totalPhotos = folders.value.sumOf { it.photoCount },
+            syncedPhotos = folders.value.sumOf { it.syncedCount },
+            pendingPhotos = folders.value.sumOf { it.pendingCount },
+            failedPhotos = folders.value.sumOf { it.failedCount },
             connectionStatus = stats.value.connectionStatus,
         )
     }
@@ -569,6 +622,10 @@ class NetworkPhotoSyncRepository(
             else -> "All synced"
         },
         previewThumbnailPaths = previewThumbnailPaths(),
+        remoteAlbumId = remoteAlbumId,
+        permission = permission,
+        sharingMode = sharingMode,
+        ownedByMe = ownedByMe,
     )
 
     private fun List<PhotoItem>.previewThumbnailPaths(): List<String> =
@@ -718,9 +775,9 @@ class NetworkPhotoSyncRepository(
     }
 
     private fun resolveDisplayName(uri: Uri): String? {
-        val projection = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME)
+        val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
         appContext.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
             if (nameIndex >= 0 && cursor.moveToFirst()) {
                 return cursor.getString(nameIndex)
             }
