@@ -31,3 +31,10 @@ data class AccessibleAlbum(
     val sharingMode: String,
     val ownedByMe: Boolean,
 )
+
+data class AlbumSharingSettings(
+    val albumId: Int,
+    val mode: String,
+    val familyPermission: String,
+    val selectedPeople: Map<Int, String>,
+)
