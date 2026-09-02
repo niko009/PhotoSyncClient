@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PhotoSync.Server.Contracts;
 using PhotoSync.Server.Data;
+using PhotoSync.Server.Services;
 using Xunit;
 
 namespace PhotoSync.Server.Tests;
@@ -15,42 +16,34 @@ public sealed class AlbumStorageFailureTests
     [Fact]
     public async Task CreateAlbum_RollsBackDatabase_WhenStorageCannotCreateDirectory()
     {
-        var externalRoot = Path.Combine(Path.GetTempPath(), "photosync-storage-failure", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(externalRoot);
-        var storageRoot = Path.Combine(externalRoot, "storage-is-a-file");
-        await File.WriteAllTextAsync(storageRoot, "not a directory");
+        await using var factory = new TestPhotoSyncFactory();
+        using var client = factory.CreateClient();
 
-        try
-        {
-            await using var factory = new TestPhotoSyncFactory(
-                new Dictionary<string, string?> { ["PhotoSync:StorageRoot"] = storageRoot });
-            using var client = factory.CreateClient();
+        var deviceUuid = Guid.NewGuid();
+        const string deviceName = "Storage test phone";
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            Convert.ToHexString(RandomNumberGenerator.GetBytes(32)));
+        client.DefaultRequestHeaders.Add("X-PhotoSync-Device", deviceUuid.ToString());
 
-            var deviceUuid = Guid.NewGuid();
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-                "Bearer",
-                Convert.ToHexString(RandomNumberGenerator.GetBytes(32)));
-            client.DefaultRequestHeaders.Add("X-PhotoSync-Device", deviceUuid.ToString());
+        var register = await client.PostAsJsonAsync(
+            "/api/devices/register",
+            new RegisterDeviceRequest(deviceUuid, deviceName, "0.6.1-beta"));
+        register.EnsureSuccessStatusCode();
 
-            var register = await client.PostAsJsonAsync(
-                "/api/devices/register",
-                new RegisterDeviceRequest(deviceUuid, "Storage test phone", "0.6.1-beta"));
-            register.EnsureSuccessStatusCode();
+        var deviceFolder = Path.Combine(
+            factory.StoragePath,
+            StoragePathResolver.MakeDeviceOwnerFolderName(deviceName, null));
+        await File.WriteAllTextAsync(deviceFolder, "block album directory creation");
 
-            var create = await client.PostAsJsonAsync(
-                "/api/albums",
-                new CreateAlbumRequest(deviceUuid, "Must not become a ghost"));
+        var create = await client.PostAsJsonAsync(
+            "/api/albums",
+            new CreateAlbumRequest(deviceUuid, "Must not become a ghost"));
 
-            Assert.Equal(HttpStatusCode.ServiceUnavailable, create.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, create.StatusCode);
 
-            await using var scope = factory.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>();
-            Assert.False(await db.Albums.IgnoreQueryFilters().AnyAsync(x => x.AlbumName == "Must not become a ghost"));
-        }
-        finally
-        {
-            if (Directory.Exists(externalRoot))
-                Directory.Delete(externalRoot, recursive: true);
-        }
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>();
+        Assert.False(await db.Albums.IgnoreQueryFilters().AnyAsync(x => x.AlbumName == "Must not become a ghost"));
     }
 }
