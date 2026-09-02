@@ -120,8 +120,8 @@ class FolderDetailViewModel(
         val albumId = current.albumId ?: return
         if (current.isSaving) return
 
+        sharing.value = current.copy(isSaving = true, errorMessage = null)
         viewModelScope.launch {
-            sharing.value = current.copy(isSaving = true, errorMessage = null)
             runCatching {
                 withContext(Dispatchers.IO) {
                     familyApi.updateAlbumSharing(
@@ -156,21 +156,19 @@ class FolderDetailViewModel(
         runCatching {
             withContext(Dispatchers.IO) {
                 val family = familyApi.getFamily()
-                val album = familyApi.getAccessibleAlbums()
+                val currentDeviceAlbumId = familyApi.getCurrentDeviceAlbumId(folderName)
+                val albumId = currentDeviceAlbumId ?: familyApi.getAccessibleAlbums()
                     .firstOrNull { it.ownedByMe && it.name == folderName }
+                    ?.albumId
                     ?: return@withContext null
-                val settings = familyApi.getAlbumSharing(album.albumId)
-                Triple(
-                    settings,
-                    family.members.filterNot { it.isCurrentUser },
-                    family.role,
-                )
+                val settings = familyApi.getAlbumSharing(albumId)
+                settings to family.members.filterNot { it.isCurrentUser }
             }
         }.onSuccess { result ->
             if (result == null) {
                 sharing.value = FolderSharingUiState(isAvailable = false)
             } else {
-                val (settings, members, _) = result
+                val (settings, members) = result
                 sharing.value = FolderSharingUiState(
                     isAvailable = true,
                     isLoading = false,
