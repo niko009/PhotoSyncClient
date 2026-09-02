@@ -58,4 +58,6 @@
     <string name="album_shared_with_me_contribute">Shared with me · I can add photos</string>
     <string name="album_shared_with_me_view">Shared with me · View only</string>
     <string name="album_shared_view_hint">This album is view-only. Ask the owner for Contribute access to add photos.</string>
+    <string name="album_folder_synced">Album synced with server</string>
+    <string name="album_folder_waiting_server">Waiting for server</string>
 </resources>
