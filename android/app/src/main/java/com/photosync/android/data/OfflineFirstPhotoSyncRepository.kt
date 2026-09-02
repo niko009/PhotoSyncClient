@@ -42,6 +42,12 @@ class OfflineFirstPhotoSyncRepository(
     private val queueMutex = Mutex()
     private val queue = MutableStateFlow(loadQueue())
 
+    init {
+        if (queue.value.isNotEmpty()) {
+            OfflineSyncScheduler.enqueue(appContext)
+        }
+    }
+
     override fun observeFolders(): Flow<List<FolderSummary>> = combine(
         delegate.observeFolders(),
         queue.asStateFlow(),
@@ -94,6 +100,13 @@ class OfflineFirstPhotoSyncRepository(
         )
     }
 
+    override suspend fun addFolder(name: String) {
+        // The base repository already creates the local folder first, even if
+        // the server is unreachable. Schedule persistent background recovery.
+        delegate.addFolder(name)
+        OfflineSyncScheduler.enqueue(appContext)
+    }
+
     override suspend fun uploadToFolder(folderId: String, uri: Uri): Boolean = queueMutex.withLock {
         val folder = delegate.observeFolder(folderId).first() ?: return@withLock false
         if (!folder.canContribute) return@withLock false
@@ -104,6 +117,7 @@ class OfflineFirstPhotoSyncRepository(
 
         queue.value = queue.value + queuedItem
         persistQueue()
+        OfflineSyncScheduler.enqueue(appContext)
 
         // Local acceptance is success. Network synchronization is deliberately
         // best-effort so users can keep working without Internet.
@@ -115,6 +129,8 @@ class OfflineFirstPhotoSyncRepository(
     }
 
     override suspend fun refresh() {
+        // Order matters: base refresh first creates any offline-created folder on
+        // the server, then queued media can safely upload into that folder.
         delegate.refresh()
         if (hasValidatedNetwork()) syncQueuedUploadsOnce()
     }
