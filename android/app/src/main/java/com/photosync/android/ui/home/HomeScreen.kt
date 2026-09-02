@@ -98,10 +98,27 @@ fun HomeScreen(state: HomeUiState, onAddFolder: (String) -> Unit, onRefresh: () 
                 items(state.folders, key = { it.id }) { folder ->
                     AlbumPanel(Modifier.clickable { onFolderClick(folder.id) }) {
                         Text(folder.name, style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.photos_progress, folder.syncedCount, folder.photoCount))
-                        LinearProgressIndicator(
-                            progress = if (folder.photoCount == 0) 0f else folder.syncedCount.toFloat() / folder.photoCount,
-                            modifier = Modifier.fillMaxWidth())
+                        if (folder.photoCount == 0) {
+                            val confirmed = folder.remoteAlbumId != null
+                            Text(
+                                stringResource(
+                                    if (confirmed) R.string.album_folder_synced
+                                    else R.string.album_folder_waiting_server,
+                                ),
+                                color = if (confirmed) MaterialTheme.colorScheme.secondary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            LinearProgressIndicator(
+                                progress = if (confirmed) 1f else 0f,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            Text(stringResource(R.string.photos_progress, folder.syncedCount, folder.photoCount))
+                            LinearProgressIndicator(
+                                progress = folder.syncedCount.toFloat() / folder.photoCount,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         if (folder.failedCount > 0) Text(stringResource(R.string.album_needs_attention), color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -152,4 +169,5 @@ private fun HomePreview() { PhotoSyncTheme(false) { HomeScreen(
 
 @Preview(name = "Empty album — dark", showBackground = true, locale = "ru")
 @Composable
-private fun HomeDarkPreview() { PhotoSyncTheme(true) { HomeScreen(HomeUiState(), {}, {}, {}, {}) } }
+private fun HomeDarkPreview() { PhotoSyncTheme(true) { HomeScreen(HomeUiState(), {}, {}, {}, {}) }
+}
