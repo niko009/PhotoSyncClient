@@ -103,7 +103,8 @@ fun FolderDetailScreen(
     var sharingModeDraft by remember { mutableStateOf("Private") }
     var familyPermissionDraft by remember { mutableStateOf("View") }
     var selectedPeopleDraft by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
-    val photo = state.folder?.photos?.firstOrNull { it.id == selectedId }
+    val folder = state.folder
+    val photo = folder?.photos?.firstOrNull { it.id == selectedId }
 
     fun openSharing() {
         val activeMemberIds = state.sharing.members.mapTo(mutableSetOf()) { it.userId }
@@ -114,9 +115,15 @@ fun FolderDetailScreen(
         sharingOpen = true
     }
 
-    val accessLabel = when (state.sharing.mode) {
-        "WholeFamily" -> stringResource(R.string.album_access_family_status)
-        "SelectedPeople" -> stringResource(R.string.album_access_selected_status)
+    val accessLabel = when {
+        folder != null && !folder.ownedByMe && folder.canContribute ->
+            stringResource(R.string.album_shared_with_me_contribute)
+        folder != null && !folder.ownedByMe ->
+            stringResource(R.string.album_shared_with_me_view)
+        state.sharing.mode == "WholeFamily" ->
+            stringResource(R.string.album_access_family_status)
+        state.sharing.mode == "SelectedPeople" ->
+            stringResource(R.string.album_access_selected_status)
         else -> stringResource(R.string.album_private)
     }
 
@@ -124,7 +131,7 @@ fun FolderDetailScreen(
         modifier.fillMaxSize(),
         topBar = {
             AlbumHeader(
-                state.folder?.name ?: stringResource(R.string.folders),
+                folder?.name ?: stringResource(R.string.folders),
                 onBack,
                 Modifier.statusBarsPadding().testTag("folder_back"),
             ) {
@@ -138,17 +145,19 @@ fun FolderDetailScreen(
                             Text(stringResource(R.string.album_access_button))
                         }
                     }
-                    IconButton(
-                        onClick = { policyDraft = state.cleanupPolicy; policyOpen = true },
-                        modifier = Modifier.testTag("folder_policy"),
-                    ) {
-                        Icon(Icons.Default.Settings, stringResource(R.string.folder_sync_behavior))
+                    if (folder?.canContribute == true) {
+                        IconButton(
+                            onClick = { policyDraft = state.cleanupPolicy; policyOpen = true },
+                            modifier = Modifier.testTag("folder_policy"),
+                        ) {
+                            Icon(Icons.Default.Settings, stringResource(R.string.folder_sync_behavior))
+                        }
                     }
                 }
             }
         },
         floatingActionButton = {
-            if (state.folder != null) {
+            if (folder?.canContribute == true) {
                 ExtendedFloatingActionButton(
                     onClick = onAddMedia,
                     modifier = Modifier.testTag("folder_add_media"),
@@ -175,7 +184,7 @@ fun FolderDetailScreen(
                         color = MaterialTheme.colorScheme.secondary,
                     )
                     Text(
-                        stringResource(R.string.photos_count, state.folder?.photos?.size ?: 0),
+                        stringResource(R.string.photos_count, folder?.photos?.size ?: 0),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     state.sharing.errorMessage?.let { message ->
@@ -183,7 +192,7 @@ fun FolderDetailScreen(
                     }
                 }
             }
-            if (state.folder == null || state.folder.photos.isEmpty()) {
+            if (folder == null || folder.photos.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     AlbumPanel {
                         Text(
@@ -193,11 +202,16 @@ fun FolderDetailScreen(
                             ),
                             style = MaterialTheme.typography.titleLarge,
                         )
-                        Text(stringResource(R.string.album_add_hint))
+                        Text(
+                            stringResource(
+                                if (folder?.canContribute == false) R.string.album_shared_view_hint
+                                else R.string.album_add_hint,
+                            ),
+                        )
                     }
                 }
             }
-            items(state.folder?.photos.orEmpty(), key = { it.id }) { item ->
+            items(folder?.photos.orEmpty(), key = { it.id }) { item ->
                 Column(
                     Modifier
                         .clip(MaterialTheme.shapes.small)
