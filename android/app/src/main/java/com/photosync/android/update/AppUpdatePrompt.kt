@@ -22,17 +22,14 @@ fun AppUpdatePrompt() {
     val manager = remember(context) { AppUpdateManager(context) }
     var updateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var dismissed by remember { mutableStateOf(false) }
-    var checking by remember { mutableStateOf(true) }
     var downloadId by remember { mutableStateOf<Long?>(null) }
     var downloadedUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var failed by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        checking = true
         manager.checkForUpdate()
             .onSuccess { updateInfo = it }
             .onFailure { failed = true }
-        checking = false
     }
 
     LaunchedEffect(downloadId, updateInfo) {
