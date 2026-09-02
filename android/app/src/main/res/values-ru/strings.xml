@@ -5,6 +5,7 @@
     <string name="folder_name">Название папки</string>
     <string name="create">Создать</string>
     <string name="cancel">Отмена</string>
+    <string name="done">Готово</string>
     <string name="settings">Настройки</string>
     <string name="upload_queue">Очередь загрузки</string>
     <string name="auto_sync_enabled">Автосинхронизация включена</string>
@@ -54,4 +55,13 @@
     <string name="policy_remove_after_sync">Удалять оригинал после синхронизации</string>
     <string name="policy_follow_global">Следовать общей настройке</string>
     <string name="policy_no_folder_override">Без настройки для папки</string>
+    <string name="share_import_title">Добавить в PhotoSync</string>
+    <string name="share_import_count">Выбрано: %1$d</string>
+    <string name="share_import_choose_folder">Выберите папку</string>
+    <string name="share_import_hint">Оригиналы остаются в галерее телефона. PhotoSync загружает их копии на ваш сервер.</string>
+    <string name="share_import_no_folders">Папок PhotoSync пока нет. Создайте новую и загрузите выбранные фото или видео.</string>
+    <string name="share_import_progress">Обработано %1$d из %2$d</string>
+    <string name="share_import_upload">Загрузить в выбранную папку</string>
+    <string name="share_import_new_folder">Новая папка</string>
+    <string name="share_import_create_and_upload">Создать и загрузить</string>
 </resources>
