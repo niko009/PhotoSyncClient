@@ -27,6 +27,8 @@ import com.photosync.android.ui.home.HomeViewModel
 import com.photosync.android.ui.settings.SettingsScreen
 import com.photosync.android.ui.settings.SettingsViewModel
 import com.photosync.android.ui.family.FamilyScreen
+import com.photosync.android.ui.share.ShareImportScreen
+import com.photosync.android.ui.share.ShareImportViewModel
 import com.photosync.android.data.FamilyApiClient
 import com.photosync.android.data.GoogleCredentialClient
 import kotlinx.coroutines.launch
@@ -36,6 +38,7 @@ private object PhotoSyncRoute {
     const val folder = "folder"
     const val settings = "settings"
     const val family = "family"
+    const val shareImport = "share-import"
     const val folderIdArg = "folderId"
 
     fun folderPath(folderId: String): String = "$folder/$folderId"
@@ -47,6 +50,8 @@ fun PhotoSyncApp(
     familyApi: FamilyApiClient,
     pendingInviteToken: String? = null,
     onInviteHandled: () -> Unit = {},
+    pendingSharedMedia: List<Uri> = emptyList(),
+    onSharedMediaHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
@@ -66,6 +71,12 @@ fun PhotoSyncApp(
     LaunchedEffect(pendingInviteToken) {
         if (pendingInviteToken != null && navController.currentDestination?.route != PhotoSyncRoute.family) {
             navController.navigate(PhotoSyncRoute.family) { launchSingleTop = true }
+        }
+    }
+
+    LaunchedEffect(pendingSharedMedia) {
+        if (pendingSharedMedia.isNotEmpty() && navController.currentDestination?.route != PhotoSyncRoute.shareImport) {
+            navController.navigate(PhotoSyncRoute.shareImport) { launchSingleTop = true }
         }
     }
 
@@ -119,6 +130,24 @@ fun PhotoSyncApp(
                 pendingInviteToken = pendingInviteToken,
                 onInviteHandled = onInviteHandled,
                 onBack = navController::popBackStack,
+            )
+        }
+
+        composable(route = PhotoSyncRoute.shareImport) {
+            val viewModel: ShareImportViewModel = viewModel(
+                factory = ShareImportViewModel.Factory(repository),
+            )
+            LaunchedEffect(pendingSharedMedia) {
+                viewModel.setSharedUris(pendingSharedMedia)
+            }
+            val finishShare: () -> Unit = {
+                onSharedMediaHandled()
+                navController.popBackStack()
+            }
+            ShareImportScreen(
+                viewModel = viewModel,
+                onCancel = finishShare,
+                onDone = finishShare,
             )
         }
 
