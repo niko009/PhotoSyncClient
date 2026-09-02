@@ -12,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -131,12 +130,12 @@ fun FolderDetailScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (state.sharing.isAvailable) {
-                        IconButton(
+                        TextButton(
                             onClick = ::openSharing,
                             enabled = !state.sharing.isSaving,
                             modifier = Modifier.testTag("folder_sharing"),
                         ) {
-                            Icon(Icons.Default.Share, stringResource(R.string.album_access_button))
+                            Text(stringResource(R.string.album_access_button))
                         }
                     }
                     IconButton(
@@ -299,7 +298,7 @@ fun FolderDetailScreen(
                     }
 
                     if (sharingModeDraft == "WholeFamily") {
-                        HorizontalDivider()
+                        Divider()
                         Text(stringResource(R.string.album_access_permission), style = MaterialTheme.typography.titleSmall)
                         PermissionChips(
                             permission = familyPermissionDraft,
@@ -308,7 +307,7 @@ fun FolderDetailScreen(
                     }
 
                     if (sharingModeDraft == "SelectedPeople") {
-                        HorizontalDivider()
+                        Divider()
                         Text(stringResource(R.string.album_access_members), style = MaterialTheme.typography.titleSmall)
                         if (state.sharing.members.isEmpty()) {
                             Text(
@@ -361,7 +360,7 @@ fun FolderDetailScreen(
                         Text(message, color = MaterialTheme.colorScheme.error)
                     }
                     if (state.sharing.isSaving) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
             },
