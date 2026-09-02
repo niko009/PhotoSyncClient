@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.photosync.android.PhotoSyncApplication
 import com.photosync.android.domain.model.ConnectionStatus
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
@@ -42,10 +43,11 @@ class OfflineSyncWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val repository = DefaultAppContainer(
-            context = applicationContext,
-            observeNetworkChanges = false,
-        ).photoSyncRepository
+        // WorkManager runs in the PhotoSync application process. Reuse the
+        // application singleton repository so foreground and background sync
+        // share one in-memory queue/mutex and cannot overwrite each other.
+        val app = applicationContext as PhotoSyncApplication
+        val repository = app.container.photoSyncRepository
         repository.refresh()
         return if (repository.observeStats().first().connectionStatus == ConnectionStatus.Online) {
             Result.success()
