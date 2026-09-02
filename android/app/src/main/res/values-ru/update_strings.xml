@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_available_title">Обновление PhotoSync</string>
+    <string name="update_available_body">Доступна версия %1$s. PhotoSync может скачать её автоматически.</string>
+    <string name="update_downloading">Скачивается PhotoSync %1$s…</string>
+    <string name="update_ready">PhotoSync %1$s готов к установке. Android может попросить подтвердить обновление.</string>
+    <string name="update_now">Обновить</string>
+    <string name="update_later">Позже</string>
+    <string name="install_update">Установить</string>
+    <string name="update_failed">Не удалось скачать или проверить обновление. Можно попробовать ещё раз.</string>
+</resources>
