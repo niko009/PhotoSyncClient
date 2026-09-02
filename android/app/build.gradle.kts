@@ -96,6 +96,7 @@ dependencies {
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.google.identity.googleid)
     implementation("com.google.zxing:core:3.5.3")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation(composeBom)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
