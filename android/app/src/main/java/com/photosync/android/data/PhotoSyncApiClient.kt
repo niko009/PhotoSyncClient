@@ -7,12 +7,11 @@ import com.photosync.android.data.remote.DeviceSummaryDto
 import com.photosync.android.data.remote.FileItemDto
 import com.photosync.android.data.remote.FileUploadResultDto
 import com.photosync.android.data.remote.ServerSummaryDto
+import com.photosync.android.domain.model.AccessibleAlbum
 import com.photosync.android.domain.model.GoogleAccount
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.DataOutputStream
-import java.io.InputStream
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
@@ -110,27 +109,28 @@ class PhotoSyncApiClient(
         }
     }
 
-    fun getFiles(deviceId: Int): List<FileItemDto> {
-        val response = getJson("/api/files/device/$deviceId")
-        val items = response.getJSONArray("files")
+    fun getAccessibleAlbums(): List<AccessibleAlbum> {
+        val response = getJson("/api/albums/accessible")
+        val items = response.getJSONArray("albums")
         return buildList(items.length()) {
             for (index in 0 until items.length()) {
                 val item = items.getJSONObject(index)
                 add(
-                    FileItemDto(
-                        id = item.getInt("server_file_id"),
-                        albumName = item.getString("album_name"),
-                        originalName = item.getString("original_name"),
-                        relativePath = item.getString("relative_path"),
-                        mimeType = item.getString("mime_type"),
-                        sizeBytes = item.getLong("size_bytes"),
-                        previewUrl = item.getString("preview_url"),
-                        downloadUrl = item.getString("download_url"),
+                    AccessibleAlbum(
+                        albumId = item.getInt("album_id"),
+                        name = item.getString("name"),
+                        permission = item.getString("permission"),
+                        sharingMode = item.getString("sharing_mode"),
+                        ownedByMe = item.getBoolean("owned_by_me"),
                     )
                 )
             }
         }
     }
+
+    fun getFiles(deviceId: Int): List<FileItemDto> = parseFiles(getJson("/api/files/device/$deviceId"))
+
+    fun getFilesForAlbum(albumId: Int): List<FileItemDto> = parseFiles(getJson("/api/files/album/$albumId"))
 
     fun downloadFile(serverFileId: Int): ByteArray = getBytes("/api/files/$serverFileId/download")
 
@@ -156,6 +156,48 @@ class PhotoSyncApiClient(
         sha256: String,
         createdAtIso: String,
         fileBytes: ByteArray,
+    ): FileUploadResultDto = uploadFileInternal(
+        albumId = null,
+        deviceUuid = deviceUuid,
+        albumName = albumName,
+        originalName = originalName,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        sha256 = sha256,
+        createdAtIso = createdAtIso,
+        fileBytes = fileBytes,
+    )
+
+    fun uploadFileToAlbum(
+        albumId: Int,
+        originalName: String,
+        mimeType: String,
+        sizeBytes: Long,
+        sha256: String,
+        createdAtIso: String,
+        fileBytes: ByteArray,
+    ): FileUploadResultDto = uploadFileInternal(
+        albumId = albumId,
+        deviceUuid = null,
+        albumName = null,
+        originalName = originalName,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        sha256 = sha256,
+        createdAtIso = createdAtIso,
+        fileBytes = fileBytes,
+    )
+
+    private fun uploadFileInternal(
+        albumId: Int?,
+        deviceUuid: String?,
+        albumName: String?,
+        originalName: String,
+        mimeType: String,
+        sizeBytes: Long,
+        sha256: String,
+        createdAtIso: String,
+        fileBytes: ByteArray,
     ): FileUploadResultDto {
         val boundary = "PhotoSyncBoundary${System.currentTimeMillis()}"
         val connection = openConnection("/api/files/upload", "POST")
@@ -163,8 +205,12 @@ class PhotoSyncApiClient(
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
 
         DataOutputStream(connection.outputStream).use { output ->
-            writeFormField(output, boundary, "device_uuid", deviceUuid)
-            writeFormField(output, boundary, "album_name", albumName)
+            if (albumId != null) {
+                writeFormField(output, boundary, "album_id", albumId.toString())
+            } else {
+                writeFormField(output, boundary, "device_uuid", requireNotNull(deviceUuid))
+                writeFormField(output, boundary, "album_name", requireNotNull(albumName))
+            }
             writeFormField(output, boundary, "original_name", originalName)
             writeFormField(output, boundary, "mime_type", mimeType)
             writeFormField(output, boundary, "size_bytes", sizeBytes.toString())
@@ -187,6 +233,27 @@ class PhotoSyncApiClient(
             storedName = response.getString("stored_name"),
             relativePath = response.getString("relative_path"),
         )
+    }
+
+    private fun parseFiles(response: JSONObject): List<FileItemDto> {
+        val items = response.getJSONArray("files")
+        return buildList(items.length()) {
+            for (index in 0 until items.length()) {
+                val item = items.getJSONObject(index)
+                add(
+                    FileItemDto(
+                        id = item.getInt("server_file_id"),
+                        albumName = item.getString("album_name"),
+                        originalName = item.getString("original_name"),
+                        relativePath = item.getString("relative_path"),
+                        mimeType = item.getString("mime_type"),
+                        sizeBytes = item.getLong("size_bytes"),
+                        previewUrl = item.getString("preview_url"),
+                        downloadUrl = item.getString("download_url"),
+                    )
+                )
+            }
+        }
     }
 
     private fun getJson(path: String): JSONObject {
