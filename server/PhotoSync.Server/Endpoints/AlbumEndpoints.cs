@@ -99,7 +99,15 @@ public static class AlbumEndpoints
         var name = request.AlbumName.Trim();
         var album = await dbContext.Albums.IgnoreQueryFilters()
             .SingleOrDefaultAsync(x => x.DeviceId == device.Id && x.AlbumName == name && x.ArchivedAtUtc == null, ct);
-        var created = false;
+
+        if (album is not null && !await access.CanManageAsync(album, ct))
+            return Results.NotFound(ApiProblems.NotFound("ALBUM_NOT_FOUND", "Album was not found."));
+
+        var created = album is null;
+        await using var transaction = created
+            ? await dbContext.Database.BeginTransactionAsync(ct)
+            : null;
+
         if (album is null)
         {
             album = new AlbumEntity
@@ -114,15 +122,28 @@ public static class AlbumEndpoints
             };
             dbContext.Albums.Add(album);
             await dbContext.SaveChangesAsync(ct);
-            created = true;
-        }
-        else if (!await access.CanManageAsync(album, ct))
-        {
-            return Results.NotFound(ApiProblems.NotFound("ALBUM_NOT_FOUND", "Album was not found."));
         }
 
         var relativePath = pathResolver.GetAlbumRelativeDirectory(device, album).Replace('\\', '/');
-        Directory.CreateDirectory(pathResolver.ToAbsolutePath(relativePath));
+        try
+        {
+            Directory.CreateDirectory(pathResolver.ToAbsolutePath(relativePath));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(ct);
+
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "PhotoSync storage is unavailable.",
+                detail: "The album could not be created in the configured storage. Check the server storage mount and write permissions.",
+                extensions: new Dictionary<string, object?> { ["error"] = "STORAGE_UNAVAILABLE" });
+        }
+
+        if (transaction is not null)
+            await transaction.CommitAsync(ct);
+
         return Results.Ok(new CreateAlbumResponse(album.Id, created, relativePath));
     }
 
