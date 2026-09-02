@@ -104,6 +104,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("org.robolectric:robolectric:4.12.2")
 
     androidTestImplementation(composeBom)
     androidTestImplementation(libs.androidx.test.ext.junit)
