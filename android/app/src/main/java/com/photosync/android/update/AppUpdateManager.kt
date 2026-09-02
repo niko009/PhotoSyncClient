@@ -67,11 +67,7 @@ class AppUpdateManager(private val context: Context) {
     }
 
     fun enqueueDownload(info: AppUpdateInfo): Long {
-        val destinationDir = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            ?: appContext.filesDir
-        destinationDir.mkdirs()
-        File(destinationDir, "photosync-${info.versionName}.apk").delete()
-
+        val fileName = "photosync-${info.versionName}.apk"
         val request = DownloadManager.Request(Uri.parse(info.apkUrl))
             .setTitle("PhotoSync ${info.versionName}")
             .setDescription("PhotoSync update")
@@ -79,11 +75,17 @@ class AppUpdateManager(private val context: Context) {
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
-            .setDestinationInExternalFilesDir(
+
+        appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { destinationDir ->
+            destinationDir.mkdirs()
+            File(destinationDir, fileName).delete()
+            request.setDestinationInExternalFilesDir(
                 appContext,
                 Environment.DIRECTORY_DOWNLOADS,
-                "photosync-${info.versionName}.apk",
+                fileName,
             )
+        }
+
         return downloadManager.enqueue(request)
     }
 
