@@ -93,9 +93,10 @@ class ShareImportViewModel(
             runCatching {
                 repository.addFolder(normalized)
                 repository.refresh()
-                val folder = repository.observeFolders().first()
-                    .firstOrNull { it.name.equals(normalized, ignoreCase = true) }
-                    ?: error("Created folder was not found.")
+                val folders = repository.observeFolders().first { items ->
+                    items.any { it.name.equals(normalized, ignoreCase = true) }
+                }
+                val folder = folders.first { it.name.equals(normalized, ignoreCase = true) }
                 uploadAll(folder.id)
             }.onFailure { error ->
                 _state.update {
@@ -120,7 +121,15 @@ class ShareImportViewModel(
                     errorMessage = null,
                 )
             }
-            uploadAll(folderId)
+            runCatching { uploadAll(folderId) }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            isUploading = false,
+                            errorMessage = error.message ?: "Import failed.",
+                        )
+                    }
+                }
         }
     }
 
