@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "jobs": {
+    "verify-storage": {
+      "publicOutput": true,
+      "steps": [
+        {
+          "name": "verify-storage-and-health",
+          "command": "node",
+          "args": ["scripts/verify-storage.mjs"],
+          "timeoutSeconds": 60
+        }
+      ]
+    }
+  }
+}
