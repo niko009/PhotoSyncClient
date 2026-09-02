@@ -23,15 +23,28 @@ class FamilyApiClient(
         return buildList {
             for (i in 0 until array.length()) {
                 val item = array.getJSONObject(i)
-                add(AccessibleAlbum(
-                    albumId = item.getInt("album_id"),
-                    name = item.getString("name"),
-                    permission = item.getString("permission"),
-                    sharingMode = item.getString("sharing_mode"),
-                    ownedByMe = item.getBoolean("owned_by_me"),
-                ))
+                add(
+                    AccessibleAlbum(
+                        albumId = item.getInt("album_id"),
+                        name = item.getString("name"),
+                        permission = item.getString("permission"),
+                        sharingMode = item.getString("sharing_mode"),
+                        ownedByMe = item.getBoolean("owned_by_me"),
+                    ),
+                )
             }
         }
+    }
+
+    fun getCurrentDeviceAlbumId(albumName: String): Int? {
+        val origin = ServerAddress.normalize(preferencesStore.getServerUrl())
+        val uuid = identity.credentials(origin).first
+        val array = request("/api/albums?device_uuid=$uuid", "GET").getJSONArray("albums")
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            if (item.getString("name") == albumName) return item.getInt("album_id")
+        }
+        return null
     }
 
     fun getAlbumSharing(albumId: Int): AlbumSharingSettings {
@@ -52,7 +65,12 @@ class FamilyApiClient(
         )
     }
 
-    fun updateAlbumSharing(albumId: Int, mode: String, familyPermission: String = "View", selectedPeople: Map<Int, String>? = null) {
+    fun updateAlbumSharing(
+        albumId: Int,
+        mode: String,
+        familyPermission: String = "View",
+        selectedPeople: Map<Int, String>? = null,
+    ) {
         val selected = selectedPeople?.let { map ->
             JSONObject().apply { map.forEach { (userId, permission) -> put(userId.toString(), permission) } }
         }
@@ -153,13 +171,15 @@ private fun JSONObject.toFamilyInfo(): FamilyInfo {
     val members = buildList {
         for (i in 0 until memberArray.length()) {
             val item = memberArray.getJSONObject(i)
-            add(FamilyMember(
-                userId = item.getInt("user_id"),
-                email = item.getString("email"),
-                displayName = item.optString("display_name").takeIf { it.isNotBlank() && it != "null" },
-                role = item.getString("role"),
-                isCurrentUser = item.getBoolean("is_current_user"),
-            ))
+            add(
+                FamilyMember(
+                    userId = item.getInt("user_id"),
+                    email = item.getString("email"),
+                    displayName = item.optString("display_name").takeIf { it.isNotBlank() && it != "null" },
+                    role = item.getString("role"),
+                    isCurrentUser = item.getBoolean("is_current_user"),
+                ),
+            )
         }
     }
     val inviteArray = getJSONArray("pending_invites")
