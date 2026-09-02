@@ -79,9 +79,9 @@ class FolderDetailViewModel(
         viewModelScope.launch {
             repository.observeFolder(folderId)
                 .filterNotNull()
-                .map { it.name }
+                .map { folder -> FolderIdentity(folder.name, folder.remoteAlbumId, folder.ownedByMe) }
                 .distinctUntilChanged()
-                .collect { folderName -> loadSharing(folderName) }
+                .collect { identity -> loadSharing(identity) }
         }
     }
 
@@ -110,8 +110,10 @@ class FolderDetailViewModel(
     }
 
     fun refreshSharing() {
-        state.value.folder?.name?.let { folderName ->
-            viewModelScope.launch { loadSharing(folderName) }
+        state.value.folder?.let { folder ->
+            viewModelScope.launch {
+                loadSharing(FolderIdentity(folder.name, folder.remoteAlbumId, folder.ownedByMe))
+            }
         }
     }
 
@@ -142,6 +144,7 @@ class FolderDetailViewModel(
                     selectedPeople = settings.selectedPeople,
                     errorMessage = null,
                 )
+                repository.refresh()
             }.onFailure { error ->
                 sharing.value = current.copy(
                     isSaving = false,
@@ -151,15 +154,21 @@ class FolderDetailViewModel(
         }
     }
 
-    private suspend fun loadSharing(folderName: String) {
+    private suspend fun loadSharing(identity: FolderIdentity) {
+        if (!identity.ownedByMe) {
+            sharing.value = FolderSharingUiState(isAvailable = false)
+            return
+        }
+
         sharing.value = sharing.value.copy(isLoading = true, errorMessage = null)
         runCatching {
             withContext(Dispatchers.IO) {
                 val family = familyApi.getFamily()
-                val currentDeviceAlbumId = familyApi.getCurrentDeviceAlbumId(folderName)
-                val albumId = currentDeviceAlbumId ?: familyApi.getAccessibleAlbums()
-                    .firstOrNull { it.ownedByMe && it.name == folderName }
-                    ?.albumId
+                val albumId = identity.remoteAlbumId
+                    ?: familyApi.getCurrentDeviceAlbumId(identity.name)
+                    ?: familyApi.getAccessibleAlbums()
+                        .firstOrNull { it.ownedByMe && it.name == identity.name }
+                        ?.albumId
                     ?: return@withContext null
                 val settings = familyApi.getAlbumSharing(albumId)
                 settings to family.members.filterNot { it.isCurrentUser }
@@ -196,6 +205,12 @@ class FolderDetailViewModel(
         is FamilyApiException -> error.userMessage()
         else -> error.message ?: "Could not update folder access."
     }
+
+    private data class FolderIdentity(
+        val name: String,
+        val remoteAlbumId: Int?,
+        val ownedByMe: Boolean,
+    )
 
     class Factory(
         private val folderId: String,
