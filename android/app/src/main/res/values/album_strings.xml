@@ -14,10 +14,10 @@
     <string name="album_home_title">Moments worth keeping</string>
     <string name="album_tagline">Your memories. Your own server.</string>
     <string name="album_my_folders">My albums</string>
-    <string name="album_private">Only this phone</string>
+    <string name="album_private">Only me</string>
     <string name="album_empty_title">A place for your memories</string>
     <string name="album_empty_body">Create your first album and add your favourite photos.</string>
-    <string name="album_private_hint">This album is private to this app installation. No Google account required.</string>
+    <string name="album_private_hint">New albums are private by default. Sign in with Google to share selected albums with family.</string>
     <string name="album_settings_title">Make yourself at home</string>
     <string name="album_device_access">Access without an account</string>
     <string name="album_device_access_body">A private key is created automatically on this phone. Knowing its ID is not enough to access your photos.</string>
@@ -28,7 +28,7 @@
     <string name="album_cleanup_warning">This requests deletion of the selected original after upload. Android may deny deletion. Keep another backup; server storage alone is not a backup strategy.</string>
     <string name="album_by_lab">A personal photo album by Bacus Lab.</string>
     <string name="album_language_system">Language follows your system settings.</string>
-    <string name="album_family_later">Family sharing is planned; it is not enabled in this version.</string>
+    <string name="album_family_later">Family sharing is available for Google-linked family members.</string>
     <string name="google_account">Google account</string>
     <string name="google_account_help">Optional. Sign in to restore access and combine the archive of phones using the same Google account.</string>
     <string name="google_sign_in">Continue with Google</string>
@@ -42,4 +42,17 @@
     <string name="album_download_original">Download original into app</string>
     <string name="album_remove_local">Remove from local list</string>
     <string name="album_remove_help">This removes the local list entry and thumbnail, not the gallery original or server file. Server photos can reappear after refresh.</string>
+    <string name="album_access_button">Folder access</string>
+    <string name="album_access_title">Folder access</string>
+    <string name="album_access_help">Choose exactly who can see this album. Family membership alone never exposes a private album.</string>
+    <string name="album_access_private">Only me</string>
+    <string name="album_access_family">Whole family</string>
+    <string name="album_access_selected">Selected people</string>
+    <string name="album_access_family_status">Shared with family</string>
+    <string name="album_access_selected_status">Shared with selected people</string>
+    <string name="album_access_permission">Permission</string>
+    <string name="album_access_view">View only</string>
+    <string name="album_access_contribute">View + add photos</string>
+    <string name="album_access_members">Family members</string>
+    <string name="album_access_no_members">No other family members yet. Create an invitation in Family settings first.</string>
 </resources>
