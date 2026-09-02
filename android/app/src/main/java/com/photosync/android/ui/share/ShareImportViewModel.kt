@@ -32,7 +32,8 @@ class ShareImportViewModel(
 
     init {
         viewModelScope.launch {
-            repository.observeFolders().collect { folders ->
+            repository.observeFolders().collect { allFolders ->
+                val folders = allFolders.filter { it.canContribute }
                 _state.update { current ->
                     val selected = current.selectedFolderId
                         ?.takeIf { id -> folders.any { it.id == id } }
@@ -94,9 +95,9 @@ class ShareImportViewModel(
                 repository.addFolder(normalized)
                 repository.refresh()
                 val folders = repository.observeFolders().first { items ->
-                    items.any { it.name.equals(normalized, ignoreCase = true) }
+                    items.any { it.ownedByMe && it.name.equals(normalized, ignoreCase = true) }
                 }
-                val folder = folders.first { it.name.equals(normalized, ignoreCase = true) }
+                val folder = folders.first { it.ownedByMe && it.name.equals(normalized, ignoreCase = true) }
                 uploadAll(folder.id)
             }.onFailure { error ->
                 _state.update {
