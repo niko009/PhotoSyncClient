@@ -2,6 +2,7 @@ package com.photosync.android.data
 
 import android.net.Uri
 import android.util.Log
+import com.photosync.android.domain.model.ConnectionStatus
 import com.photosync.android.domain.model.PhotoSyncStatus
 import com.photosync.android.domain.repository.PhotoSyncRepository
 import kotlinx.coroutines.CoroutineScope
@@ -14,13 +15,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Adds a lightweight retry queue on top of the network repository.
- *
- * The underlying repository remains the source of truth. This wrapper retries
- * locally retained Failed/Pending/stale Uploading media after connectivity is
- * restored. A successful retry removes only the stale local queue item; the
- * server original is never deleted. Server uploads are SHA-256 deduplicated, so
- * retrying after an uncertain network response does not create a second original.
+ * Compatibility retry for media that was already stored as Failed/Pending by
+ * older PhotoSync builds before the durable offline queue existed.
  */
 class RetryingPhotoSyncRepository(
     private val delegate: PhotoSyncRepository,
@@ -38,12 +34,16 @@ class RetryingPhotoSyncRepository(
 
     override suspend fun refresh() {
         delegate.refresh()
-        retryQueuedUploadsOnce()
+        if (delegate.observeStats().first().connectionStatus == ConnectionStatus.Online) {
+            retryQueuedUploadsOnce()
+        }
     }
 
     override suspend fun updateServerUrl(serverUrl: String) {
         delegate.updateServerUrl(serverUrl)
-        retryQueuedUploadsOnce()
+        if (delegate.observeStats().first().connectionStatus == ConnectionStatus.Online) {
+            retryQueuedUploadsOnce()
+        }
     }
 
     private suspend fun retryQueuedUploadsOnce() = retryMutex.withLock {
@@ -66,12 +66,11 @@ class RetryingPhotoSyncRepository(
                     val uploaded = runCatching {
                         delegate.uploadToFolder(summary.id, uri)
                     }.onFailure { error ->
-                        Log.e(TAG, "Retry failed for ${photo.title}", error)
+                        Log.e(TAG, "Legacy retry failed for ${photo.title}", error)
                     }.getOrDefault(false)
 
                     if (uploaded) {
-                        // deletePhoto is local-only in PhotoSync. It does not delete
-                        // the newly committed server original.
+                        // Local queue cleanup only; server originals are preserved.
                         delegate.deletePhoto(summary.id, photo.id)
                     }
                 }
