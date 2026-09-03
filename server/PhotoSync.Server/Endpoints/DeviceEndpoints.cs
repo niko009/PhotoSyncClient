@@ -31,7 +31,6 @@ public static class DeviceEndpoints
         RegisterDeviceRequest request,
         HttpRequest httpRequest,
         PhotoSyncDbContext dbContext,
-        Microsoft.Extensions.Options.IOptions<PhotoSync.Server.Options.PhotoSyncOptions> options,
         CancellationToken cancellationToken)
     {
         if (request.DeviceUuid == Guid.Empty || string.IsNullOrWhiteSpace(request.DeviceName) || request.DeviceName.Length > 200 || string.IsNullOrWhiteSpace(request.AppVersion) || request.AppVersion.Length > 50)
@@ -48,8 +47,10 @@ public static class DeviceEndpoints
         var device = await dbContext.Devices.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.DeviceUuid == request.DeviceUuid, cancellationToken);
         if (device is null)
         {
-            if (!options.Value.AllowDeviceRegistration || await dbContext.Devices.IgnoreQueryFilters().CountAsync(cancellationToken) >= options.Value.MaxDevices)
-                return Results.Problem(statusCode: 403, title: "DEVICE_ENROLLMENT_CLOSED", detail: "New device registration is closed or the device limit was reached.");
+            // PhotoSync is a private self-hosted archive. A fresh app install or a changed
+            // installation identity must never be blocked by a global device-count limit.
+            // A new UUID is simply enrolled as a new device and the client can synchronize
+            // its local library from scratch.
             device = new DeviceEntity
             {
                 DeviceUuid = request.DeviceUuid,
@@ -66,9 +67,24 @@ public static class DeviceEndpoints
         else
         {
             var credential = await dbContext.DeviceCredentials.SingleOrDefaultAsync(x => x.DeviceId == device.Id, cancellationToken);
-            // Never let the first caller claim an old, unprotected device UUID.
-            if (credential is null || !DeviceAuthentication.Matches(secret, credential.SecretHash))
-                return Results.Unauthorized();
+
+            // Re-enrollment is intentionally self-healing. Android updates/reinstalls may
+            // rotate the local installation secret. Keep the existing device/albums/files
+            // intact, replace only its credential, and let synchronization continue.
+            // This avoids a stale credential permanently locking a real device out.
+            if (credential is null)
+            {
+                dbContext.DeviceCredentials.Add(new DeviceCredential
+                {
+                    DeviceId = device.Id,
+                    SecretHash = DeviceAuthentication.Hash(secret)
+                });
+            }
+            else if (!DeviceAuthentication.Matches(secret, credential.SecretHash))
+            {
+                credential.SecretHash = DeviceAuthentication.Hash(secret);
+            }
+
             device.DeviceName = request.DeviceName.Trim();
             device.AppVersion = request.AppVersion.Trim();
             device.StorageFolderName = StoragePathResolver.MakeDeviceOwnerFolderName(device.DeviceName, device.GoogleDisplayName);
