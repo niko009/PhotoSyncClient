@@ -13,7 +13,6 @@ services:
       # Keep SQLite on the native Docker volume rather than the shared folder.
       PhotoSync__DatabasePath: /data/system/photosync.db
       ConnectionStrings__PhotoSync: Data Source=/data/system/photosync.db
-      PhotoSync__MaxDevices: "5"
       PhotoSync__MaxStorageBytes: "10737418240"
       PhotoSync__MaxFileBytes: "26214400"
       # Public OAuth audience used for server-side Google ID-token validation.
