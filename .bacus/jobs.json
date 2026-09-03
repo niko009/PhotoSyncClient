@@ -27,9 +27,9 @@
       "publicOutput": true,
       "steps": [
         {
-          "name": "build-sign-verify-publish",
+          "name": "build-sign-verify-publish-0.6.2",
           "command": "node",
-          "args": ["scripts/build-publish-release.mjs"],
+          "args": ["scripts/publish-0.6.2.mjs"],
           "timeoutSeconds": 1800
         }
       ]
