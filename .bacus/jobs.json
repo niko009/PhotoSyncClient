@@ -33,6 +33,17 @@
           "timeoutSeconds": 1800
         }
       ]
+    },
+    "publish-062": {
+      "publicOutput": true,
+      "steps": [
+        {
+          "name": "build-sign-verify-publish-0.6.2",
+          "command": "node",
+          "args": ["scripts/publish-0.6.2.mjs"],
+          "timeoutSeconds": 1800
+        }
+      ]
     }
   }
 }
