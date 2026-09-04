@@ -28,7 +28,7 @@ builder.Services
     .AddOptions<PhotoSyncOptions>()
     .Bind(builder.Configuration.GetSection(PhotoSyncOptions.SectionName))
     .Validate(options => !string.IsNullOrWhiteSpace(options.StorageRoot), "PhotoSync:StorageRoot is required.")
-    .Validate(options => options.MaxDevices > 0 && options.MaxFileBytes > 0 && options.MaxStorageBytes > 0 && options.MinFreeDiskBytes >= 0, "PhotoSync capacity limits must be positive.");
+    .Validate(options => options.MaxFileBytes > 0 && options.MaxStorageBytes > 0 && options.MinFreeDiskBytes >= 0, "PhotoSync capacity limits must be positive.");
 
 builder.Services.AddDbContext<PhotoSyncDbContext>((services, options) =>
 {

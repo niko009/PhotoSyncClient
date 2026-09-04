@@ -241,7 +241,7 @@ public static class PortalEndpoints
         return Results.Ok(new
         {
             server = new { name = options.Value.ServerName, protocolVersion = 2, database, freeBytes, serverCount = 1, multiServerManagement = false,
-                maxDevices = options.Value.MaxDevices, maxStorageBytes = options.Value.MaxStorageBytes, maxFileBytes = options.Value.MaxFileBytes, allowDeviceRegistration = options.Value.AllowDeviceRegistration },
+                maxDevices = (int?)null, maxStorageBytes = options.Value.MaxStorageBytes, maxFileBytes = options.Value.MaxFileBytes, allowDeviceRegistration = true },
             devices = devices.Select(x => new { x.id, x.uuid, x.name, x.lastSeenAt, x.appVersion, ownerId = owners.GetValueOrDefault(x.id),
                 fileCount = counts.FirstOrDefault(c => c.deviceId == x.id)?.fileCount ?? 0,
                 bytes = counts.FirstOrDefault(c => c.deviceId == x.id)?.bytes ?? 0 }),
