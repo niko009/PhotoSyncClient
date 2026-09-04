@@ -60,10 +60,6 @@ class NetworkPhotoSyncRepository(
 
     init {
         restoreLocalState()
-        repositoryScope.launch {
-            runCatching { refresh() }
-                .onFailure { error -> Log.e(TAG, "Initial refresh failed", error) }
-        }
     }
 
     override suspend fun addFolder(name: String) = operationMutex.withLock { addFolderInternal(name) }

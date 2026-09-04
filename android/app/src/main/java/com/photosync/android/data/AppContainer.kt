@@ -6,6 +6,7 @@ import com.photosync.android.domain.repository.PhotoSyncRepository
 interface AppContainer {
     val photoSyncRepository: PhotoSyncRepository
     val familyApiClient: FamilyApiClient
+    fun startBackgroundSync()
 }
 
 class DefaultAppContainer(
@@ -14,6 +15,7 @@ class DefaultAppContainer(
 ) : AppContainer {
     private val preferencesStore by lazy { PreferencesStore(context) }
     private val deviceIdentity by lazy { DeviceIdentity(context) }
+    private var syncObserver: NetworkSyncObserver? = null
 
     override val familyApiClient: FamilyApiClient by lazy {
         FamilyApiClient(preferencesStore, deviceIdentity)
@@ -31,9 +33,11 @@ class DefaultAppContainer(
             context = context,
             delegate = legacyRetryRepository,
         )
-        if (observeNetworkChanges) {
-            NetworkSyncObserver(context, offlineFirstRepository).start()
-        }
         offlineFirstRepository
+    }
+
+    override fun startBackgroundSync() {
+        if (!observeNetworkChanges || syncObserver != null) return
+        syncObserver = NetworkSyncObserver(context, photoSyncRepository).also { it.start() }
     }
 }

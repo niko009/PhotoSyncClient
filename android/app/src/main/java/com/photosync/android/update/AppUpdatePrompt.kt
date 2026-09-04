@@ -17,7 +17,7 @@ import com.photosync.android.R
 import kotlinx.coroutines.delay
 
 @Composable
-fun AppUpdatePrompt() {
+fun AppUpdatePrompt(onReadyForSync: () -> Unit = {}) {
     val context = LocalContext.current
     val manager = remember(context) { AppUpdateManager(context) }
     var updateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
@@ -28,8 +28,11 @@ fun AppUpdatePrompt() {
 
     LaunchedEffect(Unit) {
         manager.checkForUpdate()
-            .onSuccess { updateInfo = it }
-            .onFailure { failed = true }
+            .onSuccess {
+                updateInfo = it
+                if (it == null) onReadyForSync()
+            }
+            .onFailure { failed = true; onReadyForSync() }
     }
 
     LaunchedEffect(downloadId, updateInfo) {
@@ -81,7 +84,7 @@ fun AppUpdatePrompt() {
             },
             dismissButton = {
                 if (downloadId == null || failed) {
-                    TextButton(onClick = { dismissed = true }) {
+                    TextButton(onClick = { dismissed = true; onReadyForSync() }) {
                         Text(stringResource(R.string.update_later))
                     }
                 }
