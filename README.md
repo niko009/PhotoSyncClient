@@ -4,7 +4,9 @@ PhotoSync is a self-hosted, one-way photo and video synchronization system for A
 
 The Android application organizes media into logical folders and uploads it over the local network. The ASP.NET Core server stores the original files in ordinary folders and keeps metadata in SQLite. A successful upload is verified and committed on the server before the client treats the item as synchronized.
 
-> **Status:** 0.6.1-beta under active development. This repository is the canonical source for both the Android client and the server.
+> **Status:** 0.6.5-beta under active development. This repository is the canonical source for both the Android client and the server.
+
+Version 0.6.5-beta is the current update-gated Android build (`versionCode 11`). It must be distributed together with the matching server from this repository.
 
 Version 0.6.1-beta fixes empty-album synchronization state and hardens Windows-backed storage. An empty album is now considered synchronized only after the server confirms it, album creation is rolled back if the physical storage directory cannot be created, and server startup reconciles missing directories for existing active albums. This prevents SQLite-only “ghost albums” when `/mnt/server` is unavailable or not writable.
 
