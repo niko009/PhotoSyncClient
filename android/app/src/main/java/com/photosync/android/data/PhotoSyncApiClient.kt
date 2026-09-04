@@ -19,6 +19,7 @@ import java.net.URL
 class PhotoSyncApiClient(
     private var baseUrl: String = DEFAULT_BASE_URL,
     private val identity: DeviceIdentity,
+    private val diagnostics: DiagnosticLog? = null,
 ) {
 
     fun deviceUuid(): String = identity.credentials(effectiveBaseUrl()).first
@@ -295,11 +296,15 @@ class PhotoSyncApiClient(
             val statusCode = connection.responseCode
             val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
             val body = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            diagnostics?.append("${connection.requestMethod} ${connection.url.path} -> $statusCode (${body.length} bytes)")
             if (statusCode !in 200..299) {
                 throw IllegalStateException("HTTP $statusCode: $body")
             }
 
             if (body.isBlank()) JSONObject() else JSONObject(body)
+        } catch (error: Exception) {
+            diagnostics?.append("${connection.requestMethod} ${connection.url.path} failed: ${error.javaClass.simpleName}: ${error.message}")
+            throw error
         } finally {
             connection.disconnect()
         }
@@ -310,10 +315,14 @@ class PhotoSyncApiClient(
             val statusCode = connection.responseCode
             val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
             val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+            diagnostics?.append("${connection.requestMethod} ${connection.url.path} -> $statusCode (${bytes.size} bytes)")
             if (statusCode !in 200..299) {
                 throw IllegalStateException("HTTP $statusCode: ${bytes.decodeToString()}")
             }
             bytes
+        } catch (error: Exception) {
+            diagnostics?.append("${connection.requestMethod} ${connection.url.path} failed: ${error.javaClass.simpleName}: ${error.message}")
+            throw error
         } finally {
             connection.disconnect()
         }

@@ -20,9 +20,10 @@ class DefaultAppContainer(
     }
 
     override val photoSyncRepository: PhotoSyncRepository by lazy {
+        val diagnostics = DiagnosticLog(context)
         val networkRepository = NetworkPhotoSyncRepository(
             context = context,
-            apiClient = PhotoSyncApiClient(preferencesStore.getServerUrl(), deviceIdentity),
+            apiClient = PhotoSyncApiClient(preferencesStore.getServerUrl(), deviceIdentity, diagnostics),
             preferencesStore = preferencesStore,
         )
         val legacyRetryRepository = RetryingPhotoSyncRepository(networkRepository)

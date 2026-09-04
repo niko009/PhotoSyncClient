@@ -350,6 +350,14 @@ class NetworkPhotoSyncRepository(
                 val mimeType = appContext.contentResolver.getType(uri) ?: "application/octet-stream"
                 val originalName = resolveDisplayName(uri) ?: "upload-${System.currentTimeMillis()}"
                 val sha256 = fileBytes.sha256()
+                // A retry of the same durable queue item must update the existing
+                // local attempt instead of appending another Failed/Uploading row.
+                // Otherwise every retry inflates the folder and pending counters.
+                removeLocalPhotos(folderId) { photo ->
+                    photo.localUri == uri.toString() &&
+                        photo.serverFileId == null &&
+                        photo.status != PhotoSyncStatus.Synced
+                }
                 val tempPhotoId = UUID.randomUUID().toString()
                 attemptedPhotoId = tempPhotoId
 
@@ -619,6 +627,14 @@ class NetworkPhotoSyncRepository(
             val photos = localPhotos.value[folderId].orEmpty()
             put(folderId, currentFolder.copy(photos = photos))
         }
+    }
+
+    private fun removeLocalPhotos(folderId: String, predicate: (PhotoItem) -> Boolean) {
+        val current = localPhotos.value[folderId].orEmpty()
+        val filtered = current.filterNot(predicate)
+        if (filtered.size == current.size) return
+        localPhotos.value = localPhotos.value.toMutableMap().apply { put(folderId, filtered) }
+        persistLocalPhotos()
     }
 
     private fun FolderDetail.previewThumbnailPaths(): List<String> = photos.previewThumbnailPaths()
