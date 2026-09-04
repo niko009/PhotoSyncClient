@@ -72,6 +72,9 @@ class RetryingPhotoSyncRepository(
                     if (uploaded) {
                         // Local queue cleanup only; server originals are preserved.
                         delegate.deletePhoto(summary.id, photo.id)
+                    } else if (uri.isRevokedPhotoPickerUri()) {
+                        Log.w(TAG, "Dropping unrecoverable Photo Picker URI for ${photo.title}")
+                        delegate.deletePhoto(summary.id, photo.id)
                     }
                 }
         }

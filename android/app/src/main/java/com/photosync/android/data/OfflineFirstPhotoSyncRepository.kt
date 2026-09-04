@@ -1,7 +1,6 @@
 package com.photosync.android.data
 
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -163,7 +162,13 @@ class OfflineFirstPhotoSyncRepository(
         if (!hasValidatedNetwork()) return false
         val uri = Uri.parse(item.localUri)
         val acceptedByDelegate = delegate.uploadToFolder(item.folderId, uri)
-        if (!acceptedByDelegate) return false
+        if (!acceptedByDelegate) {
+            if (uri.isRevokedPhotoPickerUri()) {
+                Log.w(TAG, "Dropping unrecoverable Photo Picker URI for ${item.title}")
+                removeQueueItem(item, deleteStagedFile = false)
+            }
+            return false
+        }
 
         // On success the delegate has a server-backed item. Remove only stale
         // unsynced local attempts for the same media; server originals are never
@@ -199,17 +204,9 @@ class OfflineFirstPhotoSyncRepository(
     private fun makeDurableUri(folderId: String, id: String, title: String, sourceUri: Uri): Uri {
         if (sourceUri.scheme == "file") return sourceUri
 
-        // Documents selected through OpenMultipleDocuments can be retained
-        // without copying the original. Share-sheet URIs often cannot; those are
-        // copied into app-private storage so they survive process death/offline use.
-        val persisted = runCatching {
-            appContext.contentResolver.takePersistableUriPermission(
-                sourceUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-            true
-        }.getOrDefault(false)
-        if (persisted) return sourceUri
+        // Always stage content in app-private storage. Some Android providers
+        // accept takePersistableUriPermission() for a temporary Picker URI and
+        // revoke it after process death or an update.
 
         val directory = File(appContext.filesDir, "offline_queue/$folderId")
         directory.mkdirs()
@@ -336,3 +333,8 @@ class OfflineFirstPhotoSyncRepository(
         }
     }
 }
+
+internal fun Uri.isRevokedPhotoPickerUri(): Boolean =
+    scheme == "content" &&
+        (authority == "media" || authority == "com.android.providers.media.photopicker") &&
+        toString().contains("picker_get_content")
