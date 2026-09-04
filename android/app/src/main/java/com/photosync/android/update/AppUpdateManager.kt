@@ -59,7 +59,7 @@ class AppUpdateManager(private val context: Context) {
                     sha256 = json.getString("sha256").lowercase(),
                     sizeBytes = json.optLong("sizeBytes").takeIf { it > 0 },
                 )
-                if (info.versionCode > BuildConfig.VERSION_CODE) info else null
+                if (isNewerVersion(info.versionCode, BuildConfig.VERSION_CODE)) info else null
             } finally {
                 connection.disconnect()
             }
@@ -143,3 +143,6 @@ class AppUpdateManager(private val context: Context) {
         return true
     }
 }
+
+internal fun isNewerVersion(remoteVersionCode: Int, installedVersionCode: Int): Boolean =
+    remoteVersionCode > installedVersionCode
