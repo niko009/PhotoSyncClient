@@ -6,7 +6,7 @@ The Android application organizes media into logical folders and uploads it over
 
 > **Status:** 0.6.6-beta under active development. This repository is the canonical source for both the Android client and the server.
 
-Version 0.6.6-beta restores immediate server synchronization independently of the in-app update prompt and adds a persistent, privacy-aware SuperAdmin request/error journal to the web portal. It must be distributed together with the matching server from this repository.
+Version 0.6.6-beta (`versionCode 6006`) restores immediate server synchronization independently of the in-app update prompt and adds a persistent, privacy-aware SuperAdmin request/error journal to the web portal. It must be distributed together with the matching server from this repository.
 
 Version 0.6.1-beta fixes empty-album synchronization state and hardens Windows-backed storage. An empty album is now considered synchronized only after the server confirms it, album creation is rolled back if the physical storage directory cannot be created, and server startup reconciles missing directories for existing active albums. This prevents SQLite-only “ghost albums” when `/mnt/server` is unavailable or not writable.
 
