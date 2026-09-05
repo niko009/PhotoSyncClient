@@ -58,7 +58,6 @@ fun PhotoSyncApp(
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
-    val appScope = rememberCoroutineScope()
     var pendingFolderUploadViewModel by remember { mutableStateOf<FolderDetailViewModel?>(null) }
     val mediaPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -192,9 +191,11 @@ fun PhotoSyncApp(
         }
     }
 
-    AppUpdatePrompt(onReadyForSync = {
+    LaunchedEffect(repository) {
         (context.applicationContext as? com.photosync.android.PhotoSyncApplication)
             ?.container?.startBackgroundSync()
-        appScope.launch { repository.refresh() }
-    })
+        repository.refresh()
+    }
+
+    AppUpdatePrompt()
 }

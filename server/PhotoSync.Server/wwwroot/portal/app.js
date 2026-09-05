@@ -13,6 +13,8 @@ async function api(path, body) {
 async function getCsrf() { csrf = (await api('/csrf')).token; }
 function empty(target, text) { target.replaceChildren(element('p',text,'empty')); }
 function stats(target, rows) { target.replaceChildren(...rows.map(([label,value]) => { const node=element('div','','stat');node.append(element('span',label),element('strong',String(value)));return node; })); }
+function logDetails(entry) { const values=[];if(entry.requestBody)values.push('REQUEST\n'+entry.requestBody);if(entry.responseBody)values.push('RESPONSE\n'+entry.responseBody);if(entry.error)values.push('ERROR\n'+entry.error);return values.join('\n\n') || 'Без тела запроса/ответа.'; }
+function renderLogs(entries) { const target=$('server-logs');target.replaceChildren(...entries.map(entry=>{const row=element('details','','log-entry'+(entry.status>=400?' error':''));const summary=element('summary',`${date(entry.timestamp)} · ${entry.method} ${entry.path} · ${entry.status} · ${entry.durationMs} ms`);const meta=element('p',[entry.device&&`device ${entry.device}`,entry.remoteIp,entry.userAgent].filter(Boolean).join(' · '),'small');const body=element('pre',logDetails(entry));row.append(summary,meta,body);return row;}));if(!entries.length)empty(target,'Запросов пока нет.'); }
 async function loadUser() {
   const data = await api('/dashboard');
   stats($('user-stats'),[['Телефонов',data.devices.length],['Сохранено файлов',data.fileCount],['В архиве',bytes(data.bytesTotal)]]);
@@ -31,7 +33,8 @@ async function loadAdmin() {
   $('all-devices').replaceChildren(...data.devices.map(d=>{const card=element('article','','device');card.append(element('h3',d.name),element('p',d.uuid),element('p',d.fileCount+' файлов · '+bytes(d.bytes)),element('p','Последнее обращение: '+date(d.lastSeenAt)),element('p',d.ownerId?'Назначено аккаунту':'Без аккаунта'));return card;}));
   if(!data.devices.length)empty($('all-devices'),'Телефоны ещё не подключались.');
   const isOwner=me.roles.includes('SuperAdmin');$('owner-controls').hidden=!isOwner;
-  if(isOwner){const users=await api('/admin/users');$('user-choice').replaceChildren(...users.map(u=>{const o=element('option',u.name+' · '+u.roles.join(', '));o.value=u.id;return o;}));$('device-choice').replaceChildren(...data.devices.filter(d=>!d.ownerId).map(d=>{const o=element('option',d.name+' · '+d.uuid);o.value=String(d.id);return o;}));$('assign-device').querySelector('button').disabled=!data.devices.some(d=>!d.ownerId)||!users.length;}
+  $('server-logs-panel').hidden=!isOwner;
+  if(isOwner){const [users,logs]=await Promise.all([api('/admin/users'),api('/admin/logs?count=150')]);$('user-choice').replaceChildren(...users.map(u=>{const o=element('option',u.name+' · '+u.roles.join(', '));o.value=u.id;return o;}));$('device-choice').replaceChildren(...data.devices.filter(d=>!d.ownerId).map(d=>{const o=element('option',d.name+' · '+d.uuid);o.value=String(d.id);return o;}));$('assign-device').querySelector('button').disabled=!data.devices.some(d=>!d.ownerId)||!users.length;renderLogs(logs);}
   const audit=await api('/admin/audit');$('audit').replaceChildren(...audit.map(a=>{const row=element('div','','file');const text=element('div','');text.append(element('strong',({'user_created':'Создан аккаунт','device_assigned':'Назначен владелец устройства'})[a.action]||a.action),element('small',date(a.atUtc)+' · '+a.target));row.append(text);return row;}));if(!audit.length)empty($('audit'),'Административных действий пока не было.');
 }
 async function refresh() { await (adminMode?loadAdmin():loadUser()); }

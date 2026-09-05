@@ -64,7 +64,7 @@ class DeviceNetworkSmokeTest {
 
         val firstId = firstApi.registerDevice(firstApi.deviceUuid(), "Smoke A", "test").deviceId
         secondApi.registerDevice(secondApi.deviceUuid(), "Smoke B", "test")
-        assertTrue(secondApi.getFiles(firstId).isEmpty())
+        assertThrows(IllegalStateException::class.java) { secondApi.getFiles(firstId) }
         assertEquals(0, secondApi.getSummary().fileCount)
         assertThrows(IllegalStateException::class.java) { secondApi.downloadFile(photo.serverFileId!!) }
         assertEquals(firstApi.deviceUuid(), PhotoSyncApiClient(origin, DeviceIdentity(firstContext)).deviceUuid())
@@ -76,7 +76,7 @@ class DeviceNetworkSmokeTest {
             val backOwner = requireNotNull(LocalOnBackPressedDispatcherOwner.current)
             CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides config,
                 LocalActivityResultRegistryOwner provides registryOwner, LocalOnBackPressedDispatcherOwner provides backOwner) {
-                PhotoSyncTheme(false) { PhotoSyncApp(repository) }
+                PhotoSyncTheme(false) { PhotoSyncApp(repository, FamilyApiClient(preferences, DeviceIdentity(firstContext))) }
             }
         }
         composeRule.waitUntil(10_000) { composeRule.onAllNodesWithTag("folder_card").fetchSemanticsNodes().size == 1 }

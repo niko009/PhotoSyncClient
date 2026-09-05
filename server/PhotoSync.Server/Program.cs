@@ -55,7 +55,6 @@ builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>
 
 var app = builder.Build();
 
-app.UseMiddleware<PhotoSync.Server.Services.RequestAuditMiddleware>();
 app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
@@ -80,6 +79,8 @@ app.UseExceptionHandler(exceptionApp =>
         await context.Response.WriteAsJsonAsync(problem);
     });
 });
+
+app.UseMiddleware<PhotoSync.Server.Services.RequestAuditMiddleware>();
 
 using (var scope = app.Services.CreateScope())
 {

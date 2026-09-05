@@ -40,7 +40,8 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
                 ["PhotoSync:TempRoot"] = Path.Combine(StoragePath, "_temp"),
                 ["PhotoSync:PreviewRoot"] = Path.Combine(StoragePath, "_previews"),
                 ["PhotoSync:DatabasePath"] = DatabasePath,
-                ["PhotoSync:ServerName"] = "Test PhotoSync"
+                ["PhotoSync:ServerName"] = "Test PhotoSync",
+                ["PhotoSync:RequestLogging:Directory"] = Path.Combine(_rootPath, "logs")
             };
 
             foreach (var entry in _settings) settings[entry.Key] = entry.Value;

@@ -182,6 +182,9 @@ public static class PortalEndpoints
         var admin = portal.MapGroup("/admin").RequireAuthorization(PortalSetup.AdminPolicy);
         admin.MapGet("/dashboard", AdminDashboardAsync);
         admin.MapGet("/audit", async (PortalDbContext db) => Results.Ok(await db.Audit.AsNoTracking().OrderByDescending(x => x.Id).Take(100).ToListAsync()));
+        admin.MapGet("/logs", async (int? count, IConfiguration configuration, IWebHostEnvironment environment, CancellationToken cancellationToken) =>
+            Results.Ok(await RequestAuditMiddleware.ReadLatestAsync(configuration, environment, count ?? 150, cancellationToken)))
+            .RequireAuthorization(PortalSetup.OwnerPolicy);
         var owner = admin.MapGroup("/users").RequireAuthorization(PortalSetup.OwnerPolicy);
         owner.MapGet("", async (UserManager<PortalUser> users) =>
         {

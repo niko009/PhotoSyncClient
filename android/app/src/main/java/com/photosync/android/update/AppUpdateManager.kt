@@ -39,7 +39,8 @@ class AppUpdateManager(private val context: Context) {
 
     suspend fun checkForUpdate(): Result<AppUpdateInfo?> = withContext(Dispatchers.IO) {
         runCatching {
-            val connection = (URL(UPDATE_MANIFEST_URL).openConnection() as HttpURLConnection).apply {
+            val manifestUrl = "$UPDATE_MANIFEST_URL?installed=${BuildConfig.VERSION_CODE}&t=${System.currentTimeMillis()}"
+            val connection = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
                 readTimeout = 10_000
                 requestMethod = "GET"

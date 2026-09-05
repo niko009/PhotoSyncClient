@@ -129,7 +129,7 @@ public sealed class PortalTests
     {
         await using var factory = new TestPhotoSyncFactory();
         using var client = Client(factory);
-        foreach (var path in new[] { "/api/portal/me", "/api/portal/dashboard", "/api/portal/admin/dashboard", "/api/portal/admin/users" })
+        foreach (var path in new[] { "/api/portal/me", "/api/portal/dashboard", "/api/portal/admin/dashboard", "/api/portal/admin/users", "/api/portal/admin/logs" })
             Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(path)).StatusCode);
         await User(factory, "owner", "SuperAdmin");
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/portal/login", new { userName = "owner", password = Password })).StatusCode);
@@ -193,6 +193,9 @@ public sealed class PortalTests
         Assert.Equal(HttpStatusCode.NotFound, (await bob.GetAsync($"/api/portal/files/{fileId}/download")).StatusCode);
         var dashboard = await admin.GetFromJsonAsync<JsonElement>("/api/portal/admin/dashboard");
         Assert.Equal(1, dashboard.GetProperty("deviceCount").GetInt32());
+        Assert.Equal(HttpStatusCode.Forbidden, (await admin.GetAsync("/api/portal/admin/logs")).StatusCode);
+        var logs = await owner.GetFromJsonAsync<JsonElement>("/api/portal/admin/logs?count=50");
+        Assert.Contains(logs.EnumerateArray(), entry => entry.GetProperty("path").GetString()!.Contains("/api/portal/admin/dashboard"));
         // Browser sessions never grant native API device access.
         Assert.Equal(HttpStatusCode.Unauthorized, (await alice.GetAsync("/api/devices")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await bob.GetAsync("/api/portal/files/1/download")).StatusCode);
