@@ -17,6 +17,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import com.photosync.android.ui.PhotoSyncApp
 import com.photosync.android.ui.theme.PhotoSyncTheme
 import com.photosync.android.domain.model.ConnectionStatus
+import com.photosync.android.domain.model.PhotoCleanupPolicy
 import com.photosync.android.domain.model.PhotoSyncStatus
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -42,7 +43,8 @@ class DeviceNetworkSmokeTest {
         val secondApi = PhotoSyncApiClient(origin, DeviceIdentity(secondContext))
         val preferences = PreferencesStore(firstContext)
         preferences.updateServerUrl(origin)
-        val repository = NetworkPhotoSyncRepository(firstContext, firstApi, preferences)
+        val networkRepository = NetworkPhotoSyncRepository(firstContext, firstApi, preferences)
+        val repository = OfflineFirstPhotoSyncRepository(firstContext, networkRepository)
         repository.refresh()
         val connection = withTimeout(15_000) {
             repository.observeStats().first { it.connectionStatus == ConnectionStatus.Online || it.connectionStatus == ConnectionStatus.Offline }
@@ -61,6 +63,27 @@ class DeviceNetworkSmokeTest {
         repository.downloadPhoto(folder.id, photo.id)
         val downloaded = repository.observeFolder(folder.id).first()!!.photos.single()
         assertArrayEquals(fixture.readBytes(), File(Uri.parse(downloaded.localUri!!).path!!).readBytes())
+
+        repository.updateGlobalPhotoCleanupPolicy(PhotoCleanupPolicy.Compress)
+        val compressFixture = File(firstContext.filesDir, "compress-photo.png")
+        compressFixture.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        assertTrue(repository.uploadToFolder(folder.id, Uri.fromFile(compressFixture)))
+        assertFalse("Compress mode must remove the uploaded original", compressFixture.exists())
+        val compressed = repository.observeFolder(folder.id).first()!!.photos
+            .first { it.title == "compress-photo.png" }
+        assertEquals("image/png", compressed.mimeType)
+        assertNotNull(compressed.localUri)
+        assertTrue(File(Uri.parse(compressed.localUri!!).path!!).isFile)
+
+        repository.updateGlobalPhotoCleanupPolicy(PhotoCleanupPolicy.Delete)
+        val deleteFixture = File(firstContext.filesDir, "delete-photo.png")
+        deleteFixture.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        assertTrue(repository.uploadToFolder(folder.id, Uri.fromFile(deleteFixture)))
+        assertFalse("Delete mode must remove the uploaded original", deleteFixture.exists())
+        val deleted = repository.observeFolder(folder.id).first()!!.photos
+            .first { it.title == "delete-photo.png" }
+        assertNull(deleted.localUri)
+        repository.updateGlobalPhotoCleanupPolicy(PhotoCleanupPolicy.Keep)
 
         val firstId = firstApi.registerDevice(firstApi.deviceUuid(), "Smoke A", "test").deviceId
         secondApi.registerDevice(secondApi.deviceUuid(), "Smoke B", "test")

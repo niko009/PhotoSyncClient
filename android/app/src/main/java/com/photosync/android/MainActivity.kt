@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
                 PhotoSyncApp(
                     repository = appContainer.photoSyncRepository,
                     familyApi = appContainer.familyApiClient,
+                    mediaCleanupManager = appContainer.mediaCleanupManager,
                     pendingInviteToken = pendingInviteToken.value,
                     onInviteHandled = { pendingInviteToken.value = null },
                     pendingSharedMedia = pendingSharedMedia.value,

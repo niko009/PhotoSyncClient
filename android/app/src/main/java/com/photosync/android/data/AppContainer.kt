@@ -6,6 +6,7 @@ import com.photosync.android.domain.repository.PhotoSyncRepository
 interface AppContainer {
     val photoSyncRepository: PhotoSyncRepository
     val familyApiClient: FamilyApiClient
+    val mediaCleanupManager: MediaCleanupManager
     fun startBackgroundSync()
 }
 
@@ -17,6 +18,10 @@ class DefaultAppContainer(
     private val deviceIdentity by lazy { DeviceIdentity(context) }
     private var syncObserver: NetworkSyncObserver? = null
 
+    override val mediaCleanupManager: MediaCleanupManager by lazy {
+        MediaCleanupManager(context)
+    }
+
     override val familyApiClient: FamilyApiClient by lazy {
         FamilyApiClient(preferencesStore, deviceIdentity)
     }
@@ -27,6 +32,7 @@ class DefaultAppContainer(
             context = context,
             apiClient = PhotoSyncApiClient(preferencesStore.getServerUrl(), deviceIdentity, diagnostics),
             preferencesStore = preferencesStore,
+            mediaCleanupManager = mediaCleanupManager,
         )
         val legacyRetryRepository = RetryingPhotoSyncRepository(networkRepository)
         val offlineFirstRepository = OfflineFirstPhotoSyncRepository(

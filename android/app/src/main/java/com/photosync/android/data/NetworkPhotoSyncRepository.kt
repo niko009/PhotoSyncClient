@@ -41,6 +41,7 @@ class NetworkPhotoSyncRepository(
     context: Context,
     private val apiClient: PhotoSyncApiClient,
     private val preferencesStore: PreferencesStore,
+    private val mediaCleanupManager: MediaCleanupManager = MediaCleanupManager(context),
 ) : PhotoSyncRepository {
 
     private val appContext = context.applicationContext
@@ -67,7 +68,18 @@ class NetworkPhotoSyncRepository(
     override suspend fun updateServerUrl(serverUrl: String) = operationMutex.withLock { updateServerUrlInternal(serverUrl) }
     override suspend fun updateFolderPhotoCleanupPolicy(folderId: String, policy: PhotoCleanupPolicy?) = operationMutex.withLock { updateFolderPhotoCleanupPolicyInternal(folderId, policy) }
     override suspend fun downloadPhoto(folderId: String, photoId: String) = operationMutex.withLock { downloadPhotoInternal(folderId, photoId) }
-    override suspend fun uploadToFolder(folderId: String, uri: Uri) = operationMutex.withLock { uploadToFolderInternal(folderId, uri) }
+    override suspend fun uploadToFolder(folderId: String, uri: Uri) = operationMutex.withLock {
+        uploadToFolderInternal(folderId, uri, uri, null, null)
+    }
+    override suspend fun uploadStagedMedia(
+        folderId: String,
+        uploadUri: Uri,
+        sourceUri: Uri,
+        displayName: String,
+        mimeType: String,
+    ) = operationMutex.withLock {
+        uploadToFolderInternal(folderId, uploadUri, sourceUri, displayName, mimeType)
+    }
     override suspend fun deletePhoto(folderId: String, photoId: String) = operationMutex.withLock { deletePhotoInternal(folderId, photoId) }
     override suspend fun signInWithGoogle(idToken: String) = operationMutex.withLock {
         withContext(Dispatchers.IO) { googleAccount.value = apiClient.signInWithGoogle(idToken) }
@@ -335,30 +347,43 @@ class NetworkPhotoSyncRepository(
         }
     }
 
-    private suspend fun uploadToFolderInternal(folderId: String, uri: Uri): Boolean {
+    private suspend fun uploadToFolderInternal(
+        folderId: String,
+        uploadUri: Uri,
+        sourceUri: Uri,
+        displayName: String?,
+        mimeTypeOverride: String?,
+    ): Boolean {
         var attemptedPhotoId: String? = null
         return runCatching {
             withContext(Dispatchers.IO) {
                 val folder = folderDetails.value[folderId] ?: error("Upload folder was not found.")
                 check(folder.canContribute) { "This shared album is view-only." }
-                val fileBytes = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                val fileBytes = appContext.contentResolver.openInputStream(uploadUri)?.use { it.readBytes() }
                     ?: error("Shared media could not be opened.")
-                val mimeType = appContext.contentResolver.getType(uri) ?: "application/octet-stream"
-                val originalName = resolveDisplayName(uri) ?: "upload-${System.currentTimeMillis()}"
+                val originalName = displayName
+                    ?: resolveDisplayName(sourceUri)
+                    ?: resolveDisplayName(uploadUri)
+                    ?: "upload-${System.currentTimeMillis()}"
+                val mimeType = mimeTypeOverride
+                    ?: appContext.contentResolver.getType(sourceUri)
+                    ?: appContext.contentResolver.getType(uploadUri)
+                    ?: guessMimeType(originalName)
+                    ?: "application/octet-stream"
                 val sha256 = fileBytes.sha256()
                 // A retry of the same durable queue item must update the existing
                 // local attempt instead of appending another Failed/Uploading row.
                 // Otherwise every retry inflates the folder and pending counters.
                 removeLocalPhotos(folderId) { photo ->
-                    photo.localUri == uri.toString() &&
+                    photo.localUri in setOf(uploadUri.toString(), sourceUri.toString()) &&
                         photo.serverFileId == null &&
                         photo.status != PhotoSyncStatus.Synced
                 }
                 val tempPhotoId = UUID.randomUUID().toString()
                 attemptedPhotoId = tempPhotoId
 
-                val thumbnailPath = ensureThumbnail(folderId, tempPhotoId, uri)
-                updateLocalPhoto(folderId, PhotoItem(tempPhotoId, originalName, PhotoSyncStatus.Uploading, uri.toString(), thumbnailPath))
+                val thumbnailPath = ensureThumbnail(folderId, tempPhotoId, uploadUri)
+                updateLocalPhoto(folderId, PhotoItem(tempPhotoId, originalName, PhotoSyncStatus.Uploading, sourceUri.toString(), thumbnailPath))
                 restoreLocalState()
 
                 apiClient.registerDevice(
@@ -389,20 +414,20 @@ class NetworkPhotoSyncRepository(
                         fileBytes = fileBytes,
                     )
                 }
+                val localUriAfterCleanup = applyCleanupPolicy(sourceUri, folderId, mimeType)
                 updateLocalPhoto(
                     folderId,
                     PhotoItem(
                         tempPhotoId,
                         originalName,
                         PhotoSyncStatus.Synced,
-                        uri.toString(),
+                        localUriAfterCleanup,
                         thumbnailPath,
                         uploadResult.serverFileId,
                         uploadResult.relativePath,
                         mimeType,
                     ),
                 )
-                applyCleanupPolicy(uri, folderId)
                 refreshInternal()
             }
         }
@@ -707,35 +732,40 @@ class NetworkPhotoSyncRepository(
         return folderPolicies.value[folderId] ?: preferencesStore.getGlobalPhotoCleanupPolicy()
     }
 
-    private fun applyCleanupPolicy(uri: Uri, folderId: String) {
-        when (effectivePolicy(folderId)) {
-            PhotoCleanupPolicy.Keep -> Unit
-            PhotoCleanupPolicy.Compress -> runCatching {
-                compressLocalCopy(uri, folderId)
-            }.onFailure { error ->
-                Log.e(TAG, "Compress policy failed for folderId=$folderId uri=$uri", error)
+    private fun applyCleanupPolicy(uri: Uri, folderId: String, mimeType: String): String? {
+        return when (cleanupAction(effectivePolicy(folderId), mimeType)) {
+            MediaCleanupAction.KeepSource -> uri.toString()
+            MediaCleanupAction.CompressImageThenDeleteSource -> {
+                runCatching {
+                    val compressedUri = compressLocalCopy(uri, folderId)
+                    mediaCleanupManager.requestDelete(uri)
+                    compressedUri.toString()
+                }.onFailure { error ->
+                    Log.e(TAG, "Compress policy failed for folderId=$folderId uri=$uri", error)
+                }.getOrDefault(uri.toString())
             }
-            PhotoCleanupPolicy.Delete -> runCatching {
-                if (uri.scheme == "content") {
-                    appContext.contentResolver.delete(uri, null, null)
-                }
-            }.onFailure { error ->
-                Log.e(TAG, "Delete policy failed for folderId=$folderId uri=$uri", error)
+            MediaCleanupAction.DeleteSource -> {
+                mediaCleanupManager.requestDelete(uri)
+                null
             }
         }
     }
 
-    private fun compressLocalCopy(uri: Uri, folderId: String) {
-        val source = appContext.contentResolver.openInputStream(uri) ?: return
+    private fun compressLocalCopy(uri: Uri, folderId: String): Uri {
+        val source = appContext.contentResolver.openInputStream(uri)
+            ?: error("Selected image could not be opened for compression")
         val compressedDir = File(appContext.filesDir, "$cacheNamespace/compressed/$folderId")
         compressedDir.mkdirs()
         val outputFile = File(compressedDir, "${System.currentTimeMillis()}.jpg")
         source.use { input ->
-            val bitmap = decodeBitmap(input) ?: return
+            val bitmap = decodeBitmap(input) ?: error("Selected image format could not be compressed")
             FileOutputStream(outputFile).use { output ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) {
+                    "Compressed image could not be written"
+                }
             }
         }
+        return Uri.fromFile(outputFile)
     }
 
     private fun decodeBitmap(inputStream: InputStream): Bitmap? =
@@ -815,6 +845,16 @@ class NetworkPhotoSyncRepository(
         }
 
         return uri.lastPathSegment
+    }
+
+    private fun guessMimeType(name: String): String? = when (name.substringAfterLast('.', "").lowercase()) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        "heic", "heif" -> "image/heic"
+        "mp4" -> "video/mp4"
+        "mov" -> "video/quicktime"
+        else -> null
     }
 }
 

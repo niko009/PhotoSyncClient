@@ -14,11 +14,12 @@ PhotoSync is local-first: users must be able to create folders and add photos/vi
    - upload queued media into those folders;
    - refresh server state.
 6. Upload retries use the same queued item and server SHA-256 deduplication, so uncertain/repeated attempts must not create duplicate server originals.
-7. Server-side photo/video originals are never physically deleted by retry or queue cleanup.
+7. The queue persists the original source URI separately from its app-private staged upload file, so post-sync cleanup targets the selected device original rather than the staging copy.
+8. App-private staged files are removed after a successful upload; server-side photo/video originals are never physically deleted by retry or queue cleanup.
 
 ## Durable media access
 
-For document-picker URIs PhotoSync retains persistable read access when Android allows it. Share-sheet URIs often do not provide a durable permission; in that case PhotoSync copies the incoming media into app-private `offline_queue` storage before considering the add operation successful. This lets queued uploads survive process death and long offline periods.
+For Android Photo Picker URIs PhotoSync retains persistable read access when Android allows it. Share-sheet URIs often do not provide a durable permission; PhotoSync always copies incoming media into app-private `offline_queue` storage before considering the add operation successful. This lets queued uploads survive process death and long offline periods while retaining the original URI for post-sync cleanup.
 
 The temporary app-private queue copy is not the server original. Once an item is synchronized, the server-backed item is authoritative for backup purposes.
 

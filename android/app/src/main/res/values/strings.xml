@@ -53,12 +53,15 @@
     <string name="policy_use_global">Use global setting</string>
     <string name="policy_keep_compressed_copy">Keep a compressed local copy</string>
     <string name="policy_remove_after_sync">Remove original after sync</string>
+    <string name="cleanup_delete_complete">The original was removed from the device.</string>
+    <string name="cleanup_delete_cancelled">The original was kept on the device.</string>
+    <string name="cleanup_delete_failed">Android could not remove this item. It may be cloud-only or protected; remove it from the gallery manually.</string>
     <string name="policy_follow_global">Follow global</string>
     <string name="policy_no_folder_override">No folder override</string>
     <string name="share_import_title">Add to PhotoSync</string>
     <string name="share_import_count">%1$d selected</string>
     <string name="share_import_choose_folder">Choose a folder</string>
-    <string name="share_import_hint">The originals stay in your phone gallery. PhotoSync uploads copies to your server.</string>
+    <string name="share_import_hint">PhotoSync uploads copies to your server, then applies the selected post-sync behavior to the originals.</string>
     <string name="share_import_no_folders">No PhotoSync folders yet. Create one and upload the selected media.</string>
     <string name="share_import_progress">Processed %1$d of %2$d</string>
     <string name="share_import_upload">Upload to selected folder</string>

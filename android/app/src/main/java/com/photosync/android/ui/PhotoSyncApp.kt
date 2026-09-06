@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +33,7 @@ import com.photosync.android.ui.share.ShareImportScreen
 import com.photosync.android.ui.share.ShareImportViewModel
 import com.photosync.android.data.FamilyApiClient
 import com.photosync.android.data.GoogleCredentialClient
+import com.photosync.android.data.MediaCleanupManager
 import com.photosync.android.update.AppUpdatePrompt
 import kotlinx.coroutines.launch
 
@@ -50,6 +52,7 @@ private object PhotoSyncRoute {
 fun PhotoSyncApp(
     repository: PhotoSyncRepository,
     familyApi: FamilyApiClient,
+    mediaCleanupManager: MediaCleanupManager? = null,
     pendingInviteToken: String? = null,
     onInviteHandled: () -> Unit = {},
     pendingSharedMedia: List<Uri> = emptyList(),
@@ -60,7 +63,7 @@ fun PhotoSyncApp(
     val context = LocalContext.current
     var pendingFolderUploadViewModel by remember { mutableStateOf<FolderDetailViewModel?>(null) }
     val mediaPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments(),
+        contract = ActivityResultContracts.PickMultipleVisualMedia(50),
     ) { uris: List<Uri> ->
         val viewModel = pendingFolderUploadViewModel
         if (viewModel != null) {
@@ -180,7 +183,9 @@ fun PhotoSyncApp(
                 onBack = navController::popBackStack,
                 onAddMedia = {
                     pendingFolderUploadViewModel = viewModel
-                    mediaPicker.launch(arrayOf("image/*", "video/*"))
+                    mediaPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                    )
                 },
                 onDeletePhoto = viewModel::deletePhoto,
                 onDownloadPhoto = viewModel::downloadPhoto,
@@ -198,4 +203,5 @@ fun PhotoSyncApp(
     }
 
     AppUpdatePrompt()
+    mediaCleanupManager?.let { MediaDeletionEffect(it) }
 }

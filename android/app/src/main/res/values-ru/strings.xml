@@ -53,12 +53,15 @@
     <string name="policy_use_global">Использовать общую настройку</string>
     <string name="policy_keep_compressed_copy">Оставлять сжатую локальную копию</string>
     <string name="policy_remove_after_sync">Удалять оригинал после синхронизации</string>
+    <string name="cleanup_delete_complete">Оригинал удалён с устройства.</string>
+    <string name="cleanup_delete_cancelled">Оригинал оставлен на устройстве.</string>
+    <string name="cleanup_delete_failed">Android не смог удалить этот файл. Возможно, он облачный или защищён — удалите его вручную из галереи.</string>
     <string name="policy_follow_global">Следовать общей настройке</string>
     <string name="policy_no_folder_override">Без настройки для папки</string>
     <string name="share_import_title">Добавить в PhotoSync</string>
     <string name="share_import_count">Выбрано: %1$d</string>
     <string name="share_import_choose_folder">Выберите папку</string>
-    <string name="share_import_hint">Оригиналы остаются в галерее телефона. PhotoSync загружает их копии на ваш сервер.</string>
+    <string name="share_import_hint">PhotoSync загружает копии на сервер, а затем применяет выбранное поведение после синхронизации к оригиналам.</string>
     <string name="share_import_no_folders">Папок PhotoSync пока нет. Создайте новую и загрузите выбранные фото или видео.</string>
     <string name="share_import_progress">Обработано %1$d из %2$d</string>
     <string name="share_import_upload">Загрузить в выбранную папку</string>

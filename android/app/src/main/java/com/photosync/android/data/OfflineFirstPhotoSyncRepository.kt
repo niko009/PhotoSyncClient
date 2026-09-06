@@ -160,10 +160,17 @@ class OfflineFirstPhotoSyncRepository(
 
     private suspend fun syncItem(item: OfflineQueueItem): Boolean {
         if (!hasValidatedNetwork()) return false
-        val uri = Uri.parse(item.localUri)
-        val acceptedByDelegate = delegate.uploadToFolder(item.folderId, uri)
+        val uploadUri = Uri.parse(item.stagedUri)
+        val sourceUri = Uri.parse(item.sourceUri)
+        val acceptedByDelegate = delegate.uploadStagedMedia(
+            folderId = item.folderId,
+            uploadUri = uploadUri,
+            sourceUri = sourceUri,
+            displayName = item.title,
+            mimeType = item.mimeType,
+        )
         if (!acceptedByDelegate) {
-            if (uri.isRevokedPhotoPickerUri()) {
+            if (uploadUri.isRevokedPhotoPickerUri()) {
                 Log.w(TAG, "Dropping unrecoverable Photo Picker URI for ${item.title}")
                 removeQueueItem(item, deleteStagedFile = false)
             }
@@ -181,7 +188,7 @@ class OfflineFirstPhotoSyncRepository(
             }
             .forEach { stale -> delegate.deletePhoto(item.folderId, stale.id) }
 
-        removeQueueItem(item, deleteStagedFile = false)
+        removeQueueItem(item, deleteStagedFile = true)
         return true
     }
 
@@ -197,13 +204,12 @@ class OfflineFirstPhotoSyncRepository(
             folderId = folderId,
             title = title,
             mimeType = mimeType,
-            localUri = durableUri.toString(),
+            sourceUri = sourceUri.toString(),
+            stagedUri = durableUri.toString(),
         )
     }
 
     private fun makeDurableUri(folderId: String, id: String, title: String, sourceUri: Uri): Uri {
-        if (sourceUri.scheme == "file") return sourceUri
-
         // Always stage content in app-private storage. Some Android providers
         // accept takePersistableUriPermission() for a temporary Picker URI and
         // revoke it after process death or an update.
@@ -221,7 +227,7 @@ class OfflineFirstPhotoSyncRepository(
         queue.value = queue.value.filterNot { it.id == item.id }
         persistQueue()
         if (deleteStagedFile) {
-            val uri = Uri.parse(item.localUri)
+            val uri = Uri.parse(item.stagedUri)
             if (uri.scheme == "file") {
                 runCatching { uri.path?.let(::File)?.delete() }
             }
@@ -263,7 +269,12 @@ class OfflineFirstPhotoSyncRepository(
                             folderId = item.getString("folder_id"),
                             title = item.getString("title"),
                             mimeType = item.getString("mime_type"),
-                            localUri = item.getString("local_uri"),
+                            sourceUri = item.optString("source_uri")
+                                .takeIf { it.isNotBlank() }
+                                ?: item.getString("local_uri"),
+                            stagedUri = item.optString("staged_uri")
+                                .takeIf { it.isNotBlank() }
+                                ?: item.getString("local_uri"),
                         ),
                     )
                 }
@@ -280,7 +291,8 @@ class OfflineFirstPhotoSyncRepository(
                     .put("folder_id", item.folderId)
                     .put("title", item.title)
                     .put("mime_type", item.mimeType)
-                    .put("local_uri", item.localUri),
+                    .put("source_uri", item.sourceUri)
+                    .put("staged_uri", item.stagedUri),
             )
         }
         appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -294,7 +306,8 @@ class OfflineFirstPhotoSyncRepository(
         val folderId: String,
         val title: String,
         val mimeType: String,
-        val localUri: String,
+        val sourceUri: String,
+        val stagedUri: String,
     ) {
         val photoId: String get() = OFFLINE_ID_PREFIX + id
 
@@ -302,12 +315,13 @@ class OfflineFirstPhotoSyncRepository(
             id = photoId,
             title = title,
             status = PhotoSyncStatus.Pending,
-            localUri = localUri,
+            localUri = sourceUri,
             mimeType = mimeType,
         )
 
         fun matches(photo: PhotoItem): Boolean =
-            photo.localUri == localUri ||
+            photo.localUri == sourceUri ||
+                photo.localUri == stagedUri ||
                 (photo.title == title && photo.serverFileId == null)
     }
 

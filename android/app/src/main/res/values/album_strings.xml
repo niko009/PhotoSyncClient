@@ -24,8 +24,8 @@
     <string name="album_reset_warning">Uninstalling, clearing app data or resetting the phone loses access. Server files remain, but recovery is not available in this version.</string>
     <string name="album_server_help">HTTPS for public servers; HTTP only on a trusted local network. Use an origin without a path. Changing the address opens a separate space.</string>
     <string name="album_save_connect">Save and connect</string>
-    <string name="album_cleanup_help">Applies only after a successful upload. Compression creates an extra copy inside the app; it does not shrink the gallery original.</string>
-    <string name="album_cleanup_warning">This requests deletion of the selected original after upload. Android may deny deletion. Keep another backup; server storage alone is not a backup strategy.</string>
+    <string name="album_cleanup_help">Applies only after a successful upload. Compression keeps a smaller local copy, then Android asks for permission to remove the gallery original.</string>
+    <string name="album_cleanup_warning">After a verified upload, Android will ask you to confirm removal of the selected original. If you cancel, the original stays in the gallery.</string>
     <string name="album_by_lab">A personal photo album by Bacus Lab.</string>
     <string name="album_language_system">Language follows your system settings.</string>
     <string name="album_family_later">Family sharing is available for Google-linked family members.</string>

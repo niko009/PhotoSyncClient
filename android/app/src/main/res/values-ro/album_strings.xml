@@ -24,8 +24,8 @@
     <string name="album_reset_warning">Dezinstalarea, ștergerea datelor sau resetarea telefonului duc la pierderea accesului. Fișierele rămân pe server, dar recuperarea nu este disponibilă în această versiune.</string>
     <string name="album_server_help">HTTPS pentru servere publice; HTTP doar într-o rețea locală de încredere. Adresă fără cale. O adresă diferită deschide un spațiu separat.</string>
     <string name="album_save_connect">Salvați și conectați</string>
-    <string name="album_cleanup_help">Se aplică după încărcare reușită. Comprimarea creează o copie în aplicație, fără a modifica originalul din galerie.</string>
-    <string name="album_cleanup_warning">Aplicația va încerca să șteargă originalul după încărcare. Android poate refuza ștergerea. Păstrați și o altă copie de rezervă.</string>
+    <string name="album_cleanup_help">Se aplică numai după încărcarea reușită. Comprimarea păstrează o copie locală mai mică, apoi Android cere permisiunea de a șterge originalul din galerie.</string>
+    <string name="album_cleanup_warning">După încărcarea verificată, Android va cere confirmarea ștergerii originalului selectat. Dacă anulați, originalul rămâne în galerie.</string>
     <string name="album_by_lab">Un album foto personal de la Bacus Lab.</string>
     <string name="album_language_system">Limba urmează setările sistemului.</string>
     <string name="album_family_later">Partajarea în familie este disponibilă membrilor conectați cu Google.</string>

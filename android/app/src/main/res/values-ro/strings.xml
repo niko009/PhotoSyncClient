@@ -53,12 +53,15 @@
     <string name="policy_use_global">Foloseste setarea globala</string>
     <string name="policy_keep_compressed_copy">Pastreaza o copie locala comprimata</string>
     <string name="policy_remove_after_sync">Elimina originalul dupa sincronizare</string>
+    <string name="cleanup_delete_complete">Originalul a fost eliminat de pe dispozitiv.</string>
+    <string name="cleanup_delete_cancelled">Originalul a fost păstrat pe dispozitiv.</string>
+    <string name="cleanup_delete_failed">Android nu a putut elimina acest fișier. Poate fi în cloud sau protejat; ștergeți-l manual din galerie.</string>
     <string name="policy_follow_global">Urmeaza setarea globala</string>
     <string name="policy_no_folder_override">Fara suprascriere pentru dosar</string>
     <string name="share_import_title">Adauga in PhotoSync</string>
     <string name="share_import_count">Selectate: %1$d</string>
     <string name="share_import_choose_folder">Alege un dosar</string>
-    <string name="share_import_hint">Originalele raman in galeria telefonului. PhotoSync incarca copii pe serverul tau.</string>
+    <string name="share_import_hint">PhotoSync incarca copii pe server, apoi aplica originalelor comportamentul ales dupa sincronizare.</string>
     <string name="share_import_no_folders">Nu exista inca dosare PhotoSync. Creeaza unul si incarca fotografiile sau videoclipurile selectate.</string>
     <string name="share_import_progress">Procesate %1$d din %2$d</string>
     <string name="share_import_upload">Incarca in dosarul selectat</string>
