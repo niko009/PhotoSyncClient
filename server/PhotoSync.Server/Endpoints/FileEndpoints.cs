@@ -23,7 +23,7 @@ public static class FileEndpoints
     }
 
     private static async Task<IResult> CheckAsync(FileCheckRequest request, PhotoSyncDbContext db,
-        FolderAccessService access, CancellationToken ct)
+        FolderAccessService access, StoragePathResolver paths, CancellationToken ct)
     {
         if (request.DeviceUuid == Guid.Empty || string.IsNullOrWhiteSpace(request.AlbumName) || string.IsNullOrWhiteSpace(request.Sha256))
             return Results.Ok(new FileCheckResponse(false));
@@ -35,26 +35,26 @@ public static class FileEndpoints
         if (album is null || !OwnsDevice(access, album.Device) || !await access.CanContributeAsync(album, ct))
             return Results.Ok(new FileCheckResponse(false));
 
-        return await DedupResponseAsync(album.Id, request.Sha256, db, ct);
+        return await DedupResponseAsync(album.Id, request.Sha256, db, paths, ct);
     }
 
     private static async Task<IResult> CheckAlbumAsync(int albumId, AlbumFileCheckRequest request, PhotoSyncDbContext db,
-        FolderAccessService access, CancellationToken ct)
+        FolderAccessService access, StoragePathResolver paths, CancellationToken ct)
     {
         var album = await db.Albums.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == albumId && x.ArchivedAtUtc == null, ct);
         if (album is null || !await access.CanContributeAsync(album, ct))
             return Results.Ok(new FileCheckResponse(false));
-        return await DedupResponseAsync(album.Id, request.Sha256, db, ct);
+        return await DedupResponseAsync(album.Id, request.Sha256, db, paths, ct);
     }
 
-    private static async Task<IResult> DedupResponseAsync(int albumId, string sha256, PhotoSyncDbContext db, CancellationToken ct)
+    private static async Task<IResult> DedupResponseAsync(int albumId, string sha256, PhotoSyncDbContext db, StoragePathResolver paths, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(sha256)) return Results.Ok(new FileCheckResponse(false));
         var normalizedHash = sha256.Trim().ToLowerInvariant();
         var existing = await db.Files.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(x => x.AlbumId == albumId && x.Sha256 == normalizedHash && x.ArchivedAtUtc == null, ct);
-        return existing is null
+        return existing is null || !await StoredFileIntegrity.VerifyAsync(existing, paths, ct)
             ? Results.Ok(new FileCheckResponse(false))
             : Results.Ok(new FileCheckResponse(true, existing.Id, existing.RelativePath));
     }
@@ -166,10 +166,10 @@ public static class FileEndpoints
     {
         var file = await AuthorizedFileAsync(fileId, db, access, ct);
         if (file is null) return Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."));
-        var bytes = await ReadStoredFileAsync(file, pathResolver, ct);
-        return bytes is null
+        var path = pathResolver.ToAbsolutePath(file.RelativePath);
+        return !System.IO.File.Exists(path)
             ? Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."))
-            : Results.File(bytes, file.MimeType);
+            : Results.File(path, file.MimeType, enableRangeProcessing: true);
     }
 
     private static async Task<IResult> DownloadAsync(int fileId, PhotoSyncDbContext db,
@@ -177,10 +177,10 @@ public static class FileEndpoints
     {
         var file = await AuthorizedFileAsync(fileId, db, access, ct);
         if (file is null) return Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."));
-        var bytes = await ReadStoredFileAsync(file, pathResolver, ct);
-        return bytes is null
+        var path = pathResolver.ToAbsolutePath(file.RelativePath);
+        return !System.IO.File.Exists(path)
             ? Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."))
-            : Results.File(bytes, file.MimeType, file.OriginalName);
+            : Results.File(path, file.MimeType, file.OriginalName, enableRangeProcessing: true);
     }
 
     private static async Task<IResult> ArchiveAsync(int fileId, PhotoSyncDbContext db, FolderAccessService access, CancellationToken ct)
@@ -204,9 +204,4 @@ public static class FileEndpoints
     private static bool OwnsDevice(FolderAccessService access, DeviceEntity device) =>
         access.CurrentDeviceId == device.Id || (access.CurrentUserId is int userId && device.UserId == userId);
 
-    private static async Task<byte[]?> ReadStoredFileAsync(StoredFileEntity file, StoragePathResolver pathResolver, CancellationToken ct)
-    {
-        var absolutePath = pathResolver.ToAbsolutePath(file.RelativePath);
-        return System.IO.File.Exists(absolutePath) ? await System.IO.File.ReadAllBytesAsync(absolutePath, ct) : null;
-    }
 }

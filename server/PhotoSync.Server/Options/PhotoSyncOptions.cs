@@ -5,6 +5,8 @@ public sealed class PhotoSyncOptions
     public const string SectionName = "PhotoSync";
 
     public string ServerName { get; set; } = "Home PhotoSync";
+    public bool AllowDeviceEnrollment { get; set; }
+    public int MaxDevices { get; set; } = 5;
 
     public string StorageRoot { get; set; } = "data";
 
@@ -13,7 +15,7 @@ public sealed class PhotoSyncOptions
     public string PreviewRoot { get; set; } = Path.Combine("data", "previews");
 
     public string DatabasePath { get; set; } = Path.Combine("data", "system", "photosync.db");
-    public long MaxFileBytes { get; set; } = 25 * 1024 * 1024;
+    public long MaxFileBytes { get; set; } = 2L * 1024 * 1024 * 1024;
     public long MaxStorageBytes { get; set; } = 10L * 1024 * 1024 * 1024;
     public long MinFreeDiskBytes { get; set; } = 512L * 1024 * 1024;
 }

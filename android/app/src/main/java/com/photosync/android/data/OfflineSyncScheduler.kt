@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import com.photosync.android.PhotoSyncApplication
 import com.photosync.android.domain.model.ConnectionStatus
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
 /** Persistent Android background retry. Survives process death and device reboot. */
@@ -32,7 +33,7 @@ object OfflineSyncScheduler {
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             UNIQUE_WORK,
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request,
         )
     }
@@ -48,10 +49,15 @@ class OfflineSyncWorker(
         // share one in-memory queue/mutex and cannot overwrite each other.
         val app = applicationContext as PhotoSyncApplication
         val repository = app.container.photoSyncRepository
-        repository.refresh()
-        return if (repository.observeStats().first().connectionStatus == ConnectionStatus.Online) {
-            Result.success()
-        } else {
+        return try {
+            repository.refresh()
+            val stats = repository.observeStats().first()
+            val pendingFolders = repository.observeFolders().first().any { it.ownedByMe && it.remoteAlbumId == null }
+            if (stats.connectionStatus == ConnectionStatus.Online && stats.pendingPhotos == 0 &&
+                stats.failedPhotos == 0 && !pendingFolders) Result.success() else Result.retry()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
             Result.retry()
         }
     }

@@ -13,8 +13,9 @@ async function api(path, body) {
 async function getCsrf() { csrf = (await api('/csrf')).token; }
 function empty(target, text) { target.replaceChildren(element('p',text,'empty')); }
 function stats(target, rows) { target.replaceChildren(...rows.map(([label,value]) => { const node=element('div','','stat');node.append(element('span',label),element('strong',String(value)));return node; })); }
-function logDetails(entry) { const values=[];if(entry.requestBody)values.push('REQUEST\n'+entry.requestBody);if(entry.responseBody)values.push('RESPONSE\n'+entry.responseBody);if(entry.error)values.push('ERROR\n'+entry.error);return values.join('\n\n') || 'Без тела запроса/ответа.'; }
-function renderLogs(entries) { const target=$('server-logs');target.replaceChildren(...entries.map(entry=>{const row=element('details','','log-entry'+(entry.status>=400?' error':''));const summary=element('summary',`${date(entry.timestamp)} · ${entry.method} ${entry.path} · ${entry.status} · ${entry.durationMs} ms`);const meta=element('p',[entry.device&&`device ${entry.device}`,entry.remoteIp,entry.userAgent].filter(Boolean).join(' · '),'small');const body=element('pre',logDetails(entry));row.append(summary,meta,body);return row;}));if(!entries.length)empty(target,'Запросов пока нет.'); }
+function logDetails(entry) { const values=[];if(entry.requestBody)values.push('REQUEST\n'+entry.requestBody);if(entry.responseBody)values.push((entry.source==='server'?'MESSAGE':'RESPONSE')+'\n'+entry.responseBody);if(entry.error)values.push('ERROR\n'+entry.error);return values.join('\n\n') || 'Без тела запроса/ответа.'; }
+function renderLogs(entries) { logEntries = entries; filterLogs(); }
+function drawLogs(entries) { const target=$('server-logs');target.replaceChildren(...entries.map(entry=>{const row=element('details','','log-entry'+(entry.status>=400 || entry.level==='Error' || entry.level==='Critical'?' error':''));const summary=element('summary',`${date(entry.timestamp)} · ${entry.source==='server'?entry.category:entry.method+' '+entry.path} · ${entry.level||'Information'}${entry.status?' · '+entry.status+' · '+entry.durationMs+' ms':''}`);const meta=element('p',[entry.device&&`device ${entry.device}`,entry.remoteIp,entry.userAgent,entry.traceId&&`trace ${entry.traceId}`].filter(Boolean).join(' · '),'small');const body=element('pre',logDetails(entry));row.append(summary,meta,body);return row;}));if(!entries.length)empty(target,'Запросов пока нет.'); }
 async function loadUser() {
   const data = await api('/dashboard');
   stats($('user-stats'),[['Телефонов',data.devices.length],['Сохранено файлов',data.fileCount],['В архиве',bytes(data.bytesTotal)]]);
@@ -34,14 +35,16 @@ async function loadAdmin() {
   if(!data.devices.length)empty($('all-devices'),'Телефоны ещё не подключались.');
   const isOwner=me.roles.includes('SuperAdmin');$('owner-controls').hidden=!isOwner;
   $('server-logs-panel').hidden=!isOwner;
-  if(isOwner){const [users,logs]=await Promise.all([api('/admin/users'),api('/admin/logs?count=150')]);$('user-choice').replaceChildren(...users.map(u=>{const o=element('option',u.name+' · '+u.roles.join(', '));o.value=u.id;return o;}));$('device-choice').replaceChildren(...data.devices.filter(d=>!d.ownerId).map(d=>{const o=element('option',d.name+' · '+d.uuid);o.value=String(d.id);return o;}));$('assign-device').querySelector('button').disabled=!data.devices.some(d=>!d.ownerId)||!users.length;renderLogs(logs);}
+  if(isOwner){const [users,logs]=await Promise.all([api('/admin/users'),api('/admin/logs?count=500')]);$('user-choice').replaceChildren(...users.map(u=>{const o=element('option',u.name+' · '+u.roles.join(', '));o.value=u.id;return o;}));$('device-choice').replaceChildren(...data.devices.filter(d=>!d.ownerId).map(d=>{const o=element('option',d.name+' · '+d.uuid);o.value=String(d.id);return o;}));$('assign-device').querySelector('button').disabled=!data.devices.some(d=>!d.ownerId)||!users.length;renderLogs(logs);}
   const audit=await api('/admin/audit');$('audit').replaceChildren(...audit.map(a=>{const row=element('div','','file');const text=element('div','');text.append(element('strong',({'user_created':'Создан аккаунт','device_assigned':'Назначен владелец устройства'})[a.action]||a.action),element('small',date(a.atUtc)+' · '+a.target));row.append(text);return row;}));if(!audit.length)empty($('audit'),'Административных действий пока не было.');
 }
-async function refresh() { await (adminMode?loadAdmin():loadUser()); }
+async function refresh() { $('welcome').textContent=adminMode?'Сервер под наблюдением':me.name+' · мой архив'; await (adminMode?loadAdmin():loadUser()); }
 async function session() {
   try { me=await api('/me'); } catch(error) { if(error.status!==401)throw error;me=null; }
   $('login-view').hidden=!!me;$('workspace').hidden=!me;$('logout').hidden=!me;
-  if(!me)return;
+  if(!me){logEntries=[];$('server-logs').replaceChildren();$('log-live').checked=false;delete $('workspace').dataset.session;return;}
+  if(me.roles.includes('SuperAdmin') && $('workspace').dataset.session !== me.name){adminMode=true;$('user-view').hidden=true;$('admin-view').hidden=false;$('user-tab').setAttribute('aria-pressed','false');$('admin-tab').setAttribute('aria-pressed','true');}
+  $('workspace').dataset.session=me.name;
   $('welcome').textContent=me.name+' · мой архив';$('account-role').textContent=me.roles.includes('SuperAdmin')?'Владелец сервера':me.roles.includes('ServerAdmin')?'Администратор сервера':'Личный кабинет';
   $('admin-tab').hidden=!me.roles.some(r=>r==='SuperAdmin'||r==='ServerAdmin');$('password-panel').hidden=!me.hasPassword;await getCsrf();await refresh();
 }
@@ -65,3 +68,29 @@ async function start() {
   if (status.googleLoginAvailable && !me) renderGoogle(status.googleClientId).catch(error=>message(error.message));
 }
 start().catch(error=>message(error.message));
+
+let logEntries = [], logsBusy = false;
+function selectedLogs() {
+  const query = $('log-search').value.toLowerCase();
+  return logEntries.filter(e => (!$('log-source').value || (e.source || 'http') === $('log-source').value)
+    && (!$('log-level').value || e.level === $('log-level').value)
+    && (!query || JSON.stringify(e).toLowerCase().includes(query)));
+}
+function filterLogs() {
+  const entries = selectedLogs(); drawLogs(entries);
+  $('log-status').textContent = `${entries.length} из ${logEntries.length} событий · обновлено ${new Date().toLocaleTimeString('ru')}`;
+}
+async function refreshLogs() {
+  if (logsBusy || !me?.roles.includes('SuperAdmin')) return;
+  logsBusy = true; $('log-refresh').disabled = true;
+  try { renderLogs(await api('/admin/logs?count=500')); }
+  catch(error) { $('log-live').checked=false; message(error.message); }
+  finally { logsBusy=false; $('log-refresh').disabled=false; }
+}
+for (const id of ['log-search','log-source','log-level']) $(id).addEventListener('input',filterLogs);
+$('log-refresh').addEventListener('click',refreshLogs);
+$('log-export').addEventListener('click',()=>{
+  const url=URL.createObjectURL(new Blob([JSON.stringify(selectedLogs(),null,2)],{type:'application/json'}));
+  const link=element('a','');link.href=url;link.download='photosync-journal.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+setInterval(()=>{if(adminMode && me?.roles.includes('SuperAdmin') && $('log-live').checked && !document.hidden && !$('server-logs').querySelector('details[open]')) refreshLogs();},5000);

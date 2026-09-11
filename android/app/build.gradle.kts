@@ -18,8 +18,8 @@ android {
         applicationId = "com.photosync.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6007
-        versionName = "0.6.7-beta"
+        versionCode = 6008
+        versionName = "0.6.8-beta"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://photosync.bacus.dev\"")
         // Public OAuth identifier. Never place the Google client_secret in an APK.
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"221018828266-g4jt660ltqoaf2oniuolc82i3m1mpoee.apps.googleusercontent.com\"")
@@ -42,6 +42,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Allows an explicitly requested, local device-test build to replace
+            // the installed release without clearing its data. Ordinary debug
+            // builds continue to use the Android debug key.
+            if (providers.gradleProperty("deviceTestWithReleaseKey").orNull == "true" && releaseSigningFile.exists()) {
+                signingConfig = signingConfigs.getByName("photosyncRelease")
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -67,10 +75,10 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.4.8"
+        kotlinCompilerExtensionVersion = "1.5.8"
     }
 
-    packagingOptions {
+    packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }

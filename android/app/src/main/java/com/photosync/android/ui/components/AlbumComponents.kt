@@ -55,17 +55,32 @@ fun Brand(modifier: Modifier = Modifier) {
 
 /** Decode bounded images off the UI thread, not full camera bitmaps in a grid. */
 @Composable
-fun AlbumImage(path: String?, description: String?, modifier: Modifier = Modifier, fit: Boolean = false) {
+fun AlbumImage(
+    path: String?,
+    description: String?,
+    modifier: Modifier = Modifier,
+    fit: Boolean = false,
+    fallbackPath: String? = null,
+) {
     val context = LocalContext.current
-    val image by produceState<android.graphics.Bitmap?>(null, path, fit) {
+    val image by produceState<android.graphics.Bitmap?>(null, path, fallbackPath, fit) {
         value = null
         value = withContext(Dispatchers.IO) {
-            runCatching {
-                if (path.isNullOrBlank()) return@runCatching null
-                fun stream() = if (path.startsWith("content:") || path.startsWith("file:"))
-                    context.contentResolver.openInputStream(Uri.parse(path)) else File(path).inputStream()
-                stream()?.use { decodePhotoBitmap(it, if (fit) 1600 else 480) }
-            }.getOrNull()
+            sequenceOf(path, fallbackPath)
+                .filterNotNull()
+                .filter { it.isNotBlank() }
+                .distinct()
+                .mapNotNull { candidate ->
+                    runCatching {
+                        val stream = if (candidate.startsWith("content:") || candidate.startsWith("file:")) {
+                            context.contentResolver.openInputStream(Uri.parse(candidate))
+                        } else {
+                            File(candidate).inputStream()
+                        }
+                        stream?.use { decodePhotoBitmap(it, if (fit) 1600 else 480) }
+                    }.getOrNull()
+                }
+                .firstOrNull()
         }
     }
     Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {

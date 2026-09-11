@@ -1,9 +1,21 @@
 name: Android build verification
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.204'
+      - name: Run server tests
+        run: dotnet test server/PhotoSync.Server.slnx --verbosity minimal
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -23,7 +35,7 @@ jobs:
       - name: Upload debug APK verification artifact
         uses: actions/upload-artifact@v4
         with:
-          name: photosync-android-0.6.1-beta-debug-verification
+          name: photosync-android-debug-verification
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 3

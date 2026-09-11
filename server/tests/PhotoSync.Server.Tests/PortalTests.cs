@@ -44,6 +44,31 @@ public sealed class PortalTests
     }
 
     [Fact]
+    public async Task Journal_CapturesServerErrorsAndRedactsAccountPasswords()
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        await User(factory, "journal-owner", "SuperAdmin");
+        using var owner = Client(factory);
+        await Login(owner, "journal-owner");
+        var result = await owner.PostAsJsonAsync("/api/portal/admin/users", new { userName = "journal-user", password = Password, role = "User" });
+        result.EnsureSuccessStatusCode();
+        using var scope = factory.Services.CreateScope();
+        var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("JournalProbe");
+        Microsoft.Extensions.Logging.LoggerExtensions.LogError(logger, new InvalidOperationException("Probe failure"), "Background operation failed");
+        JsonElement logs = default;
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            logs = await owner.GetFromJsonAsync<JsonElement>("/api/portal/admin/logs?count=500");
+            if (logs.EnumerateArray().Any(x => x.GetProperty("category").GetString() == "JournalProbe")) break;
+            await Task.Delay(50);
+        }
+        Assert.Contains(logs.EnumerateArray(), x => x.GetProperty("category").GetString() == "JournalProbe" && x.GetProperty("error").GetString()!.Contains("Probe failure"));
+        Assert.DoesNotContain(Password, logs.GetRawText());
+        Assert.DoesNotContain(logs.EnumerateArray(), x => x.GetProperty("path").GetString()!.StartsWith("/api/portal/admin/logs"));
+        Assert.Contains(logs.EnumerateArray(), x => x.GetProperty("source").GetString() == "http" && x.GetProperty("traceId").GetString() is { Length: > 0 });
+    }
+
+    [Fact]
     public async Task InitialSetupStatus_OffersGoogleOnHttps_AndPasswordOnlyAfterAccountExists()
     {
         await using var factory = new TestPhotoSyncFactory();

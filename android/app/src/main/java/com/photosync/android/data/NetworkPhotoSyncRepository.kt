@@ -164,7 +164,7 @@ class NetworkPhotoSyncRepository(
                 val accessibleById = accessibleAlbums.associateBy { it.albumId }
                 val sharedAlbums = accessibleAlbums.filterNot { it.ownedByMe }
                 var serverAlbums = visibleDevices.flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
-                    .distinctBy { it.name }
+                    .distinctBy { it.id }
 
                 val knownServerAlbumNames = serverAlbums.map { it.name }.toSet()
                 val missingLocalFolders = localFolders.value.values.filter { it.name !in knownServerAlbumNames }
@@ -181,11 +181,10 @@ class NetworkPhotoSyncRepository(
                 }
                 if (recoveredPendingFolder) {
                     serverAlbums = visibleDevices.flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
-                        .distinctBy { it.name }
+                        .distinctBy { it.id }
                 }
 
-                val serverFiles = visibleDevices.flatMap { device -> apiClient.getFiles(device.id) }
-                    .groupBy { it.albumName }
+                val serverFiles = serverAlbums.associate { album -> album.id to apiClient.getFilesForAlbum(album.id) }
                 val previousDetails = folderDetails.value
                 val details = linkedMapOf<String, FolderDetail>()
                 val summaries = linkedMapOf<String, FolderSummary>()
@@ -196,7 +195,7 @@ class NetworkPhotoSyncRepository(
                     val mergedPhotos = mergePhotos(
                         previousPhotos,
                         localCachedPhotos,
-                        serverFiles[localFolder.name].orEmpty(),
+                        serverFiles[localFolder.remoteAlbumId].orEmpty(),
                         localFolder.id,
                     )
                     val detail = localFolder.copy(photos = mergedPhotos, ownedByMe = true)
@@ -204,15 +203,20 @@ class NetworkPhotoSyncRepository(
                     summaries[detail.id] = detail.toSummary()
                 }
 
+                val matchedLocalIds = mutableSetOf<String>()
                 serverAlbums.forEach { album ->
-                    val matchingLocal = localFolders.value.values.firstOrNull { it.name == album.name }
+                    val matchingLocal = localFolders.value.values.firstOrNull { it.remoteAlbumId == album.id }
+                        ?: localFolders.value.values.firstOrNull {
+                            it.remoteAlbumId == null && it.name == album.name && it.id !in matchedLocalIds
+                        }
+                    matchingLocal?.let { matchedLocalIds.add(it.id) }
                     val folderId = matchingLocal?.id ?: album.id.toString()
                     val previousPhotos = previousDetails[folderId]?.photos.orEmpty()
                     val localCachedPhotos = localPhotos.value[folderId].orEmpty()
                     val mergedPhotos = mergePhotos(
                         previousPhotos,
                         localCachedPhotos,
-                        serverFiles[album.name].orEmpty(),
+                        serverFiles[album.id].orEmpty(),
                         folderId,
                     )
                     val access = accessibleById[album.id]
@@ -324,11 +328,10 @@ class NetworkPhotoSyncRepository(
                     ?: folderDetails.value[folderId]?.photos.orEmpty().firstOrNull { it.id == photoId }
                     ?: return@withContext
                 val serverFileId = photo.serverFileId ?: return@withContext
-                val bytes = apiClient.downloadFile(serverFileId)
                 val downloadsDir = File(appContext.filesDir, "$cacheNamespace/downloads/$folderId")
                 downloadsDir.mkdirs()
                 val targetFile = File(downloadsDir, "$serverFileId-" + StoragePathResolverSafeName.make(photo.title))
-                targetFile.writeBytes(bytes)
+                apiClient.downloadFile(serverFileId, targetFile)
                 val localUri = Uri.fromFile(targetFile).toString()
                 val thumbnailPath = ensureThumbnailFromFile(folderId, photo.id, targetFile) ?: photo.thumbnailPath
                 updateLocalPhoto(
@@ -359,8 +362,9 @@ class NetworkPhotoSyncRepository(
             withContext(Dispatchers.IO) {
                 val folder = folderDetails.value[folderId] ?: error("Upload folder was not found.")
                 check(folder.canContribute) { "This shared album is view-only." }
-                val fileBytes = appContext.contentResolver.openInputStream(uploadUri)?.use { it.readBytes() }
-                    ?: error("Shared media could not be opened.")
+                val openFile = { appContext.contentResolver.openInputStream(uploadUri)
+                    ?: error("Shared media could not be opened.") }
+                val fingerprint = openFile().use { fingerprintMedia(it) }
                 val originalName = displayName
                     ?: resolveDisplayName(sourceUri)
                     ?: resolveDisplayName(uploadUri)
@@ -370,7 +374,7 @@ class NetworkPhotoSyncRepository(
                     ?: appContext.contentResolver.getType(uploadUri)
                     ?: guessMimeType(originalName)
                     ?: "application/octet-stream"
-                val sha256 = fileBytes.sha256()
+                val sha256 = fingerprint.sha256
                 // A retry of the same durable queue item must update the existing
                 // local attempt instead of appending another Failed/Uploading row.
                 // Otherwise every retry inflates the folder and pending counters.
@@ -396,10 +400,10 @@ class NetworkPhotoSyncRepository(
                         albumId = folder.remoteAlbumId,
                         originalName = originalName,
                         mimeType = mimeType,
-                        sizeBytes = fileBytes.size.toLong(),
+                        sizeBytes = fingerprint.sizeBytes,
                         sha256 = sha256,
                         createdAtIso = Instant.now().toString(),
-                        fileBytes = fileBytes,
+                        openFile = openFile,
                     )
                 } else {
                     apiClient.createAlbum(deviceUuid, folder.name)
@@ -408,10 +412,10 @@ class NetworkPhotoSyncRepository(
                         albumName = folder.name,
                         originalName = originalName,
                         mimeType = mimeType,
-                        sizeBytes = fileBytes.size.toLong(),
+                        sizeBytes = fingerprint.sizeBytes,
                         sha256 = sha256,
                         createdAtIso = Instant.now().toString(),
-                        fileBytes = fileBytes,
+                        openFile = openFile,
                     )
                 }
                 val localUriAfterCleanup = applyCleanupPolicy(sourceUri, folderId, mimeType)
@@ -470,6 +474,7 @@ class NetworkPhotoSyncRepository(
                             id = id,
                             name = item.getString("name"),
                             photos = emptyList(),
+                            remoteAlbumId = item.optIntOrNull("remote_album_id"),
                         ),
                     )
                 }
@@ -539,7 +544,8 @@ class NetworkPhotoSyncRepository(
             payload.put(
                 JSONObject()
                     .put("id", folder.id)
-                    .put("name", folder.name),
+                    .put("name", folder.name)
+                    .put("remote_album_id", folder.remoteAlbumId),
             )
         }
 
@@ -674,7 +680,7 @@ class NetworkPhotoSyncRepository(
             photos.any { it.status == PhotoSyncStatus.Uploading } -> "Uploading"
             photos.any { it.status == PhotoSyncStatus.Failed } -> "Failed"
             photos.any { it.status == PhotoSyncStatus.RemoteOnly } -> "On server"
-            photos.isEmpty() -> "Pending sync"
+            photos.isEmpty() && remoteAlbumId == null -> "Pending sync"
             else -> "All synced"
         },
         previewThumbnailPaths = previewThumbnailPaths(),
@@ -798,12 +804,15 @@ class NetworkPhotoSyncRepository(
     }
 
     private fun ensureServerPreview(folderId: String, serverFile: FileItemDto): String? {
+        // The server currently serves originals as previews. Never fetch a large
+        // video (or oversized image) just to render an album grid.
+        if (!serverFile.mimeType.startsWith("image/") || serverFile.sizeBytes > 10L * 1024 * 1024) return null
         return runCatching {
             val previewDir = File(appContext.filesDir, "$cacheNamespace/server_previews/$folderId")
             previewDir.mkdirs()
             val previewFile = File(previewDir, "${serverFile.id}.jpg")
             if (!previewFile.exists()) {
-                previewFile.writeBytes(apiClient.downloadPreview(serverFile.id))
+                apiClient.downloadPreview(serverFile.id, previewFile)
             }
             previewFile.absolutePath
         }.getOrElse { error ->
@@ -858,10 +867,6 @@ class NetworkPhotoSyncRepository(
     }
 }
 
-private fun ByteArray.sha256(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(this)
-    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-}
 
 private fun JSONObject.optStringOrNull(name: String): String? {
     if (!has(name) || isNull(name)) return null

@@ -31,6 +31,7 @@ public static class DeviceEndpoints
         RegisterDeviceRequest request,
         HttpRequest httpRequest,
         PhotoSyncDbContext dbContext,
+        Microsoft.Extensions.Options.IOptions<PhotoSync.Server.Options.PhotoSyncOptions> options,
         CancellationToken cancellationToken)
     {
         if (request.DeviceUuid == Guid.Empty || string.IsNullOrWhiteSpace(request.DeviceName) || request.DeviceName.Length > 200 || string.IsNullOrWhiteSpace(request.AppVersion) || request.AppVersion.Length > 50)
@@ -47,10 +48,10 @@ public static class DeviceEndpoints
         var device = await dbContext.Devices.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.DeviceUuid == request.DeviceUuid, cancellationToken);
         if (device is null)
         {
-            // PhotoSync is a private self-hosted archive. A fresh app install or a changed
-            // installation identity must never be blocked by a global device-count limit.
-            // A new UUID is simply enrolled as a new device and the client can synchronize
-            // its local library from scratch.
+            if (!options.Value.AllowDeviceEnrollment)
+                return Results.Json(new { error = "device_enrollment_closed" }, statusCode: 403);
+            if (await dbContext.Devices.IgnoreQueryFilters().CountAsync(cancellationToken) >= options.Value.MaxDevices)
+                return Results.Json(new { error = "device_limit_reached" }, statusCode: 409);
             device = new DeviceEntity
             {
                 DeviceUuid = request.DeviceUuid,
@@ -68,22 +69,10 @@ public static class DeviceEndpoints
         {
             var credential = await dbContext.DeviceCredentials.SingleOrDefaultAsync(x => x.DeviceId == device.Id, cancellationToken);
 
-            // Re-enrollment is intentionally self-healing. Android updates/reinstalls may
-            // rotate the local installation secret. Keep the existing device/albums/files
-            // intact, replace only its credential, and let synchronization continue.
-            // This avoids a stale credential permanently locking a real device out.
-            if (credential is null)
-            {
-                dbContext.DeviceCredentials.Add(new DeviceCredential
-                {
-                    DeviceId = device.Id,
-                    SecretHash = DeviceAuthentication.Hash(secret)
-                });
-            }
-            else if (!DeviceAuthentication.Matches(secret, credential.SecretHash))
-            {
-                credential.SecretHash = DeviceAuthentication.Hash(secret);
-            }
+            // UUID is an identifier, never proof of ownership. Legacy installations
+            // without a credential require operator-assisted recovery.
+            if (credential is null || !DeviceAuthentication.Matches(secret, credential.SecretHash))
+                return Results.Unauthorized();
 
             device.DeviceName = request.DeviceName.Trim();
             device.AppVersion = request.AppVersion.Trim();

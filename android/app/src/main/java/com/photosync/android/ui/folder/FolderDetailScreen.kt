@@ -436,10 +436,11 @@ fun FolderDetailScreen(
                             Text(photo.title, Modifier.weight(1f), maxLines = 2)
                         }
                         AlbumImage(
-                            photo.localUri ?: photo.thumbnailPath,
+                            photo.localUri,
                             photo.title,
                             Modifier.fillMaxWidth().weight(1f),
                             fit = true,
+                            fallbackPath = photo.thumbnailPath,
                         )
                         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(photo.status.statusText())

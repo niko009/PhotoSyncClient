@@ -10,7 +10,16 @@ using PhotoSync.Server.Portal;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Keep transport limits aligned with the configurable media limit, including
+// multipart headers. Reverse proxies must be configured with a matching limit.
+var maxFileBytes = builder.Configuration.GetValue<long?>("PhotoSync:MaxFileBytes")
+    ?? new PhotoSyncOptions().MaxFileBytes;
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = checked(maxFileBytes + 1024 * 1024));
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+    options.MultipartBodyLengthLimit = maxFileBytes);
+
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<ILoggerProvider, ServerJournalProvider>();
 builder.Services.AddOptions<PhotoSync.Server.Security.GoogleAuthOptions>()
     .Bind(builder.Configuration.GetSection(PhotoSync.Server.Security.GoogleAuthOptions.SectionName))
     .Validate(options => !string.IsNullOrWhiteSpace(options.ClientId), "GoogleAuth:ClientId is required.")
@@ -28,7 +37,7 @@ builder.Services
     .AddOptions<PhotoSyncOptions>()
     .Bind(builder.Configuration.GetSection(PhotoSyncOptions.SectionName))
     .Validate(options => !string.IsNullOrWhiteSpace(options.StorageRoot), "PhotoSync:StorageRoot is required.")
-    .Validate(options => options.MaxFileBytes > 0 && options.MaxStorageBytes > 0 && options.MinFreeDiskBytes >= 0, "PhotoSync capacity limits must be positive.");
+    .Validate(options => options.MaxFileBytes > 0 && options.MaxStorageBytes > 0 && options.MinFreeDiskBytes >= 0 && options.MaxDevices > 0, "PhotoSync capacity limits must be positive.");
 
 builder.Services.AddDbContext<PhotoSyncDbContext>((services, options) =>
 {
@@ -63,6 +72,8 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
+app.UseMiddleware<PhotoSync.Server.Services.RequestAuditMiddleware>();
+
 app.UseExceptionHandler(exceptionApp =>
 {
     exceptionApp.Run(async context =>
@@ -80,7 +91,6 @@ app.UseExceptionHandler(exceptionApp =>
     });
 });
 
-app.UseMiddleware<PhotoSync.Server.Services.RequestAuditMiddleware>();
 
 using (var scope = app.Services.CreateScope())
 {

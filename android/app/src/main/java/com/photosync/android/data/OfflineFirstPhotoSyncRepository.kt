@@ -2,7 +2,6 @@ package com.photosync.android.data
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
@@ -13,6 +12,9 @@ import com.photosync.android.domain.model.PhotoItem
 import com.photosync.android.domain.model.PhotoSyncStatus
 import com.photosync.android.domain.repository.PhotoSyncRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -110,18 +112,21 @@ class OfflineFirstPhotoSyncRepository(
         val folder = delegate.observeFolder(folderId).first() ?: return@withLock false
         if (!folder.canContribute) return@withLock false
 
-        val queuedItem = runCatching { createQueueItem(folderId, uri) }
+        val queuedItem = runCatching { withContext(Dispatchers.IO) { createQueueItem(folderId, uri) } }
+            .onFailure { if (it is CancellationException) throw it }
             .onFailure { error -> Log.e(TAG, "Could not queue media for offline sync", error) }
             .getOrNull() ?: return@withLock false
 
-        queue.value = queue.value + queuedItem
-        persistQueue()
+        val nextQueue = queue.value + queuedItem
+        persistQueue(nextQueue)
+        queue.value = nextQueue
         OfflineSyncScheduler.enqueue(appContext)
 
         // Local acceptance is success. Network synchronization is deliberately
         // best-effort so users can keep working without Internet.
-        if (hasValidatedNetwork()) {
+        if (hasNetwork()) {
             runCatching { syncItem(queuedItem) }
+                .onFailure { if (it is CancellationException) throw it }
                 .onFailure { error -> Log.e(TAG, "Immediate queued upload failed", error) }
         }
         true
@@ -131,12 +136,27 @@ class OfflineFirstPhotoSyncRepository(
         // Order matters: base refresh first creates any offline-created folder on
         // the server, then queued media can safely upload into that folder.
         delegate.refresh()
-        if (hasValidatedNetwork()) syncQueuedUploadsOnce()
+        if (hasNetwork()) syncQueuedUploadsOnce()
     }
 
     override suspend fun updateServerUrl(serverUrl: String) {
-        delegate.updateServerUrl(serverUrl)
-        if (hasValidatedNetwork()) syncQueuedUploadsOnce()
+        queueMutex.withLock {
+            check(queue.value.isEmpty() || ServerAddress.normalize(serverUrl) == delegate.observeServerUrl().first()) {
+                "Finish or remove pending uploads before changing the server."
+            }
+            delegate.updateServerUrl(serverUrl)
+        }
+        if (hasNetwork()) syncQueuedUploadsOnce()
+    }
+
+    override suspend fun signInWithGoogle(idToken: String) = queueMutex.withLock {
+        check(queue.value.isEmpty()) { "Finish or remove pending uploads before changing the account." }
+        delegate.signInWithGoogle(idToken)
+    }
+
+    override suspend fun signOutFromGoogle() = queueMutex.withLock {
+        check(queue.value.isEmpty()) { "Finish or remove pending uploads before signing out." }
+        delegate.signOutFromGoogle()
     }
 
     override suspend fun deletePhoto(folderId: String, photoId: String) = queueMutex.withLock {
@@ -150,16 +170,17 @@ class OfflineFirstPhotoSyncRepository(
     }
 
     suspend fun syncQueuedUploadsOnce() = queueMutex.withLock {
-        if (!hasValidatedNetwork()) return@withLock
+        if (!hasNetwork()) return@withLock
         val snapshot = queue.value.toList()
         snapshot.forEach { item ->
             runCatching { syncItem(item) }
+                .onFailure { if (it is CancellationException) throw it }
                 .onFailure { error -> Log.e(TAG, "Queued sync failed for ${item.title}", error) }
         }
     }
 
     private suspend fun syncItem(item: OfflineQueueItem): Boolean {
-        if (!hasValidatedNetwork()) return false
+        if (!hasNetwork()) return false
         val uploadUri = Uri.parse(item.stagedUri)
         val sourceUri = Uri.parse(item.sourceUri)
         val acceptedByDelegate = delegate.uploadStagedMedia(
@@ -170,10 +191,6 @@ class OfflineFirstPhotoSyncRepository(
             mimeType = item.mimeType,
         )
         if (!acceptedByDelegate) {
-            if (uploadUri.isRevokedPhotoPickerUri()) {
-                Log.w(TAG, "Dropping unrecoverable Photo Picker URI for ${item.title}")
-                removeQueueItem(item, deleteStagedFile = false)
-            }
             return false
         }
 
@@ -217,15 +234,21 @@ class OfflineFirstPhotoSyncRepository(
         val directory = File(appContext.filesDir, "offline_queue/$folderId")
         directory.mkdirs()
         val target = File(directory, "${id}_${safeFileName(title)}")
-        appContext.contentResolver.openInputStream(sourceUri)?.use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Selected media could not be opened")
+        try {
+            appContext.contentResolver.openInputStream(sourceUri)?.use { input ->
+                target.outputStream().use { output -> input.copyTo(output); output.fd.sync() }
+            } ?: error("Selected media could not be opened")
+        } catch (error: Exception) {
+            target.delete()
+            throw error
+        }
         return Uri.fromFile(target)
     }
 
-    private fun removeQueueItem(item: OfflineQueueItem, deleteStagedFile: Boolean) {
-        queue.value = queue.value.filterNot { it.id == item.id }
-        persistQueue()
+    private suspend fun removeQueueItem(item: OfflineQueueItem, deleteStagedFile: Boolean) {
+        val nextQueue = queue.value.filterNot { it.id == item.id }
+        persistQueue(nextQueue)
+        queue.value = nextQueue
         if (deleteStagedFile) {
             val uri = Uri.parse(item.stagedUri)
             if (uri.scheme == "file") {
@@ -234,12 +257,11 @@ class OfflineFirstPhotoSyncRepository(
         }
     }
 
-    private fun hasValidatedNetwork(): Boolean {
+    private fun hasNetwork(): Boolean {
         val manager = appContext.getSystemService(ConnectivityManager::class.java) ?: return false
         val network = manager.activeNetwork ?: return false
-        val capabilities = manager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        // A reachable LAN server does not require Android's internet validation.
+        return manager.getNetworkCapabilities(network) != null
     }
 
     private fun resolveDisplayName(uri: Uri): String? {
@@ -282,9 +304,9 @@ class OfflineFirstPhotoSyncRepository(
         }.getOrDefault(emptyList())
     }
 
-    private fun persistQueue() {
+    private suspend fun persistQueue(items: List<OfflineQueueItem>) = withContext(Dispatchers.IO) {
         val payload = JSONArray()
-        queue.value.forEach { item ->
+        items.forEach { item ->
             payload.put(
                 JSONObject()
                     .put("id", item.id)
@@ -295,10 +317,10 @@ class OfflineFirstPhotoSyncRepository(
                     .put("staged_uri", item.stagedUri),
             )
         }
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        check(appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_QUEUE, payload.toString())
-            .apply()
+            .commit()) { "Could not save upload queue. Free some device storage and retry." }
     }
 
     private data class OfflineQueueItem(

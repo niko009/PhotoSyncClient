@@ -10,12 +10,14 @@
         android:allowBackup="false"
         android:label="@string/app_name"
         android:icon="@drawable/ic_album_brand"
+        android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.PhotoSync">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -41,6 +41,7 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
                 ["PhotoSync:PreviewRoot"] = Path.Combine(StoragePath, "_previews"),
                 ["PhotoSync:DatabasePath"] = DatabasePath,
                 ["PhotoSync:ServerName"] = "Test PhotoSync",
+                ["PhotoSync:AllowDeviceEnrollment"] = "true",
                 ["PhotoSync:RequestLogging:Directory"] = Path.Combine(_rootPath, "logs")
             };
 

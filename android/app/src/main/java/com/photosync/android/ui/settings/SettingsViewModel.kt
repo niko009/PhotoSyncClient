@@ -20,6 +20,7 @@ data class SettingsUiState(
     val googleAccount: GoogleAccount? = null,
     val googleBusy: Boolean = false,
     val googleError: Boolean = false,
+    val actionError: String? = null,
 )
 
 class SettingsViewModel(
@@ -27,6 +28,7 @@ class SettingsViewModel(
 ) : ViewModel() {
     private val googleBusy = MutableStateFlow(false)
     private val googleError = MutableStateFlow(false)
+    private val actionError = MutableStateFlow<String?>(null)
     private val baseState = combine(
         repository.observeServerUrl(),
         repository.observeGlobalPhotoCleanupPolicy(),
@@ -40,8 +42,8 @@ class SettingsViewModel(
             googleAccount = googleAccount,
         )
     }
-    val state: StateFlow<SettingsUiState> = combine(baseState, googleBusy, googleError) { base, busy, error ->
-        base.copy(googleBusy = busy, googleError = error)
+    val state: StateFlow<SettingsUiState> = combine(baseState, googleBusy, googleError, actionError) { base, busy, error, action ->
+        base.copy(googleBusy = busy, googleError = error, actionError = action)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
@@ -50,7 +52,9 @@ class SettingsViewModel(
 
     fun saveServerUrl(serverUrl: String) {
         viewModelScope.launch {
-            repository.updateServerUrl(serverUrl)
+            actionError.value = null
+            runCatching { repository.updateServerUrl(serverUrl) }
+                .onFailure { actionError.value = it.message }
         }
     }
 
@@ -64,8 +68,9 @@ class SettingsViewModel(
         viewModelScope.launch {
             googleBusy.value = true
             googleError.value = false
+            actionError.value = null
             runCatching { repository.signInWithGoogle(idToken) }
-                .onFailure { googleError.value = true }
+                .onFailure { googleError.value = true; actionError.value = it.message }
             googleBusy.value = false
         }
     }
@@ -76,8 +81,9 @@ class SettingsViewModel(
         viewModelScope.launch {
             googleBusy.value = true
             googleError.value = false
+            actionError.value = null
             runCatching { repository.signOutFromGoogle() }
-                .onFailure { googleError.value = true }
+                .onFailure { googleError.value = true; actionError.value = it.message }
             googleBusy.value = false
         }
     }

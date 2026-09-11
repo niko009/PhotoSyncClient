@@ -26,7 +26,10 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
 
         var duplicate = await dbContext.Files.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(x => x.DeviceId == command.Device.Id && x.AlbumId == command.Album.Id && x.Sha256 == command.Sha256 && x.ArchivedAtUtc == null, cancellationToken);
-        if (duplicate is not null) return StoreFileResult.FromExisting(duplicate);
+        if (duplicate is not null)
+            return await StoredFileIntegrity.VerifyAsync(duplicate, pathResolver, cancellationToken)
+                ? StoreFileResult.FromExisting(duplicate)
+                : StoreFileResult.Invalid("Stored original is missing or damaged. Keep the source and contact the server operator.");
 
         var used = await dbContext.Files.IgnoreQueryFilters().SumAsync(x => (long?)x.SizeBytes, cancellationToken) ?? 0;
         var free = UploadGuard.FreeBytes(pathResolver.StorageRoot);
@@ -56,6 +59,8 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
                 }
                 sha256.TransformFinalBlock([], 0, 0);
                 computedHash = Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
+                await destination.FlushAsync(cancellationToken);
+                destination.Flush(flushToDisk: true);
             }
 
             if (totalBytes != command.SizeBytes)
@@ -64,13 +69,19 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
                 return StoreFileResult.Invalid("Uploaded file hash does not match sha256.", tempFilePath);
 
             // Permission can be revoked while a large upload is in flight. Re-check immediately before publication.
-            if (!await access.CanContributeAsync(command.Album, cancellationToken))
+            var currentAlbum = await dbContext.Albums.IgnoreQueryFilters().AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == command.Album.Id, cancellationToken);
+            if (currentAlbum is null || !await access.CanContributeAsync(currentAlbum, cancellationToken))
                 return StoreFileResult.Forbidden(tempFilePath);
 
-            var relativePath = await GetAvailableRelativePathAsync(command.Device, command.Album, command.CreatedAtUtc, command.OriginalName, cancellationToken);
+            var relativePath = await GetAvailableRelativePathAsync(command, cancellationToken);
             var finalPath = pathResolver.ToAbsolutePath(relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
-            File.Move(tempFilePath, finalPath);
+            // A failed database commit may have left this verified original behind.
+            // Reuse it on retry; never overwrite or delete an existing original.
+            if (!File.Exists(finalPath)) File.Move(tempFilePath, finalPath);
+            else if (!await StoredFileIntegrity.VerifyAsync(finalPath, totalBytes, computedHash, cancellationToken))
+                return StoreFileResult.Invalid("Storage file changed during publication. Retry the upload.");
 
             var entity = new StoredFileEntity
             {
@@ -106,16 +117,18 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
         }
     }
 
-    private async Task<string> GetAvailableRelativePathAsync(DeviceEntity device, AlbumEntity album, DateTimeOffset createdAtUtc, string originalName, CancellationToken cancellationToken)
+    private async Task<string> GetAvailableRelativePathAsync(StoreFileCommand command, CancellationToken cancellationToken)
     {
         for (var index = 0; index < 5000; index++)
         {
             var suffix = index == 0 ? null : index.ToString();
-            var candidate = pathResolver.GetFinalRelativePath(device, album, createdAtUtc, originalName, suffix).Replace('\\', '/');
+            var candidate = pathResolver.GetFinalRelativePath(command.Device, command.Album, command.CreatedAtUtc, command.OriginalName, suffix).Replace('\\', '/');
             var existsInDb = await dbContext.Files.IgnoreQueryFilters().AsNoTracking().AnyAsync(x => x.RelativePath == candidate, cancellationToken);
             if (existsInDb) continue;
             var absolutePath = pathResolver.ToAbsolutePath(candidate);
             if (!File.Exists(absolutePath)) return candidate;
+            if (await StoredFileIntegrity.VerifyAsync(absolutePath, command.SizeBytes, command.Sha256, cancellationToken))
+                return candidate;
         }
         throw new InvalidOperationException("Could not allocate a unique storage path for the uploaded file.");
     }

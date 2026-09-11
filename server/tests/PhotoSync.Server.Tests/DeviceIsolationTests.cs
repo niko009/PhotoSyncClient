@@ -100,7 +100,7 @@ public sealed class DeviceIsolationTests
         Assert.NotEqual(fileA.ServerFileId, (await responseB.Content.ReadFromJsonAsync<UploadFileResponse>())!.ServerFileId);
         Authenticate(b, uuidA, secretB);
         Assert.Equal(HttpStatusCode.Unauthorized, (await b.GetAsync("/api/devices")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await b.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(uuidA, "Reenrolled", "1"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await b.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(uuidA, "Reenrolled", "1"))).StatusCode);
         Assert.Equal(idA, await Register(a, uuidA, secretA));
     }
 
@@ -116,7 +116,7 @@ public sealed class DeviceIsolationTests
     }
 
     [Fact]
-    public async Task LegacyUuidCanBeReenrolledWithRotatedCredential()
+    public async Task LegacyUuidCannotBeClaimedWithoutProofOfOwnership()
     {
         await using var factory = new TestPhotoSyncFactory();
         using var client = factory.CreateClient();
@@ -138,6 +138,6 @@ public sealed class DeviceIsolationTests
         }
         Authenticate(client, uuid, new string('a', 64));
         var claim = await client.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(uuid, "Reenrolled", "1"));
-        Assert.Equal(HttpStatusCode.OK, claim.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, claim.StatusCode);
     }
 }

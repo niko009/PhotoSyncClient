@@ -34,6 +34,7 @@ fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: 
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             item {
                 Text(stringResource(R.string.album_settings_title), style = MaterialTheme.typography.headlineLarge)
+                state.actionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
             item {
                 AlbumPanel {
@@ -69,10 +70,9 @@ fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: 
             }
             item {
                 AlbumPanel {
-                    Text("Family", style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.family), style = MaterialTheme.typography.titleLarge)
                     Text(
-                        if (state.googleAccount == null) "Sign in with Google first to manage family sharing."
-                        else "Invite family members and control who can access shared folders.",
+                        stringResource(if (state.googleAccount == null) R.string.family_sign_in_first else R.string.family_access_help),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -80,7 +80,7 @@ fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: 
                         onClick = onOpenFamily,
                         enabled = state.googleAccount != null,
                         modifier = Modifier.fillMaxWidth().testTag("open_family"),
-                    ) { Text("Open Family") }
+                    ) { Text(stringResource(R.string.family_open)) }
                 }
             }
             item {

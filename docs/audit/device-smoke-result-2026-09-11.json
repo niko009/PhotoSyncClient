@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "details": {
+    "server": "http:\/\/127.0.0.1:5187",
+    "small_bytes": 262144,
+    "video_bytes": 33554432,
+    "range_response": 206,
+    "album_files": 2,
+    "device_isolation": true
+  },
+  "finished_at": "2026-09-11T06:58:12.139226Z"
+}

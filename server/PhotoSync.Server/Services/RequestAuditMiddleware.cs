@@ -6,7 +6,8 @@ namespace PhotoSync.Server.Services;
 
 public sealed record RequestAuditEntry(DateTimeOffset Timestamp, string Method, string Path, int Status,
     long DurationMs, string? Device, string? RemoteIp, string? UserAgent,
-    string? RequestBody, string? ResponseBody, string? Error);
+    string? RequestBody, string? ResponseBody, string? Error,
+    string Source = "http", string Level = "Information", string? Category = null, string? TraceId = null);
 
 /// <summary>
 /// A bounded, privacy-aware request journal for operational diagnostics.
@@ -32,7 +33,10 @@ public sealed class RequestAuditMiddleware
             return;
         }
 
-        var requestBody = await ReadRequestBodyAsync(context.Request);
+        if (context.Request.Path.StartsWithSegments("/api/portal/admin/logs")) { await next(context); return; }
+        string? requestBody = null;
+        try { requestBody = await ReadRequestBodyAsync(context.Request); }
+        catch (IOException) { /* Let the endpoint handle transport failures. */ }
         var originalBody = context.Response.Body;
         await using var responseCapture = new BoundedCaptureStream(originalBody, ResponseBodyLimit);
         context.Response.Body = responseCapture;
@@ -42,20 +46,23 @@ public sealed class RequestAuditMiddleware
         catch (Exception error) { failure = error; throw; }
         finally
         {
+            failure ??= context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
             stopwatch.Stop();
             context.Response.Body = originalBody;
             var entry = new RequestAuditEntry(
                 DateTimeOffset.UtcNow,
                 context.Request.Method,
-                context.Request.Path + context.Request.QueryString,
+                IsSensitive(context.Request.Path) ? "[sensitive endpoint]" : context.Request.Path.ToString(),
                 failure is null ? context.Response.StatusCode : StatusCodes.Status500InternalServerError,
                 stopwatch.ElapsedMilliseconds,
                 EmptyToNull(context.Request.Headers["X-PhotoSync-Device"].ToString()),
                 context.Connection.RemoteIpAddress?.ToString(),
                 EmptyToNull(context.Request.Headers.UserAgent.ToString()),
                 requestBody,
-                IsTextual(context.Response.ContentType) ? responseCapture.CapturedText : null,
-                failure?.ToString());
+                !IsSensitive(context.Request.Path) && IsTextual(context.Response.ContentType) ? LogRedaction.Json(responseCapture.CapturedText) : null,
+                LogRedaction.Clean(failure?.ToString()), "http",
+                failure is not null || context.Response.StatusCode >= 500 ? "Error" : context.Response.StatusCode >= 400 ? "Warning" : "Information",
+                "HTTP", context.TraceIdentifier);
             await AppendAsync(entry, configuration, environment);
         }
     }
@@ -71,7 +78,10 @@ public sealed class RequestAuditMiddleware
         var result = new List<RequestAuditEntry>(count);
         foreach (var file in files)
         {
-            var lines = await File.ReadAllLinesAsync(file, cancellationToken);
+            var tail = new Queue<string>(count);
+            await foreach (var line in File.ReadLinesAsync(file, cancellationToken))
+            { if (tail.Count == count) tail.Dequeue(); tail.Enqueue(line); }
+            var lines = tail.ToArray();
             for (var index = lines.Length - 1; index >= 0 && result.Count < count; index--)
             {
                 try
@@ -95,33 +105,42 @@ public sealed class RequestAuditMiddleware
         var buffer = new char[RequestBodyLimit];
         var read = await reader.ReadBlockAsync(buffer, 0, buffer.Length);
         request.Body.Position = 0;
-        return read == 0 ? null : new string(buffer, 0, read);
+        return read == 0 ? null : LogRedaction.Json(new string(buffer, 0, read));
     }
 
     private static bool IsSensitive(PathString path) =>
+        path.StartsWithSegments("/api/portal/admin/users") || path.StartsWithSegments("/api/devices/register") ||
         path.StartsWithSegments("/api/portal/login") || path.StartsWithSegments("/api/portal/google-login") ||
-        path.StartsWithSegments("/api/portal/password") || path.StartsWithSegments("/api/auth/google");
+        path.StartsWithSegments("/api/portal/password") || path.StartsWithSegments("/api/auth/google") ||
+        path.StartsWithSegments("/api/family") || path.StartsWithSegments("/join") ||
+        path.StartsWithSegments("/api/portal/csrf");
 
     private static bool IsTextual(string? contentType) => contentType is not null &&
         (contentType.Contains("json", StringComparison.OrdinalIgnoreCase) ||
          contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase) ||
          contentType.Contains("problem+json", StringComparison.OrdinalIgnoreCase));
 
-    private static async Task AppendAsync(RequestAuditEntry entry, IConfiguration configuration, IWebHostEnvironment environment)
+    internal static async Task AppendAsync(RequestAuditEntry entry, IConfiguration configuration, IWebHostEnvironment environment)
     {
-        var root = ResolveRoot(configuration, environment);
-        var file = Path.Combine(root, $"requests-{entry.Timestamp:yyyyMMddHH}.jsonl");
         try
         {
+            var root = ResolveRoot(configuration, environment);
+            var file = Path.Combine(root, $"requests-{entry.Timestamp:yyyyMMddHH}.jsonl");
             Directory.CreateDirectory(root);
             await Gate.WaitAsync();
-            try { await File.AppendAllTextAsync(file, JsonSerializer.Serialize(entry) + Environment.NewLine); }
+            try
+            {
+                await File.AppendAllTextAsync(file, JsonSerializer.Serialize(entry) + Environment.NewLine);
+                foreach (var expired in Directory.EnumerateFiles(root, "requests-*.jsonl")
+                    .Where(path => File.GetLastWriteTimeUtc(path) < DateTime.UtcNow.AddDays(-Math.Clamp(configuration.GetValue("PhotoSync:RequestLogging:RetentionDays", 7), 1, 90))))
+                    File.Delete(expired);
+            }
             finally { Gate.Release(); }
         }
         catch { /* diagnostics must never break product requests */ }
     }
 
-    private static string ResolveRoot(IConfiguration configuration, IWebHostEnvironment environment)
+    internal static string ResolveRoot(IConfiguration configuration, IWebHostEnvironment environment)
     {
         var root = configuration["PhotoSync:RequestLogging:Directory"];
         if (string.IsNullOrWhiteSpace(root)) root = Path.Combine(environment.ContentRootPath, "logs");

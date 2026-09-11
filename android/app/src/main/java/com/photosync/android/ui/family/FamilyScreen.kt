@@ -13,7 +13,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.photosync.android.R
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.photosync.android.data.FamilyApiClient
@@ -24,6 +26,7 @@ import com.photosync.android.domain.model.FamilyInvite
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,7 +50,7 @@ fun FamilyScreen(
             error = null
             runCatching { withContext(Dispatchers.IO) { api.getFamily() } }
                 .onSuccess { family = it }
-                .onFailure { error = failureMessage(it) }
+                .onFailure { error = failureMessage(context, it) }
             busy = false
         }
     }
@@ -57,8 +60,8 @@ fun FamilyScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Family") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                title = { Text(stringResource(R.string.family)) },
+                navigationIcon = { TextButton(onClick = onBack) { Text(stringResource(R.string.back)) } },
             )
         },
     ) { padding ->
@@ -71,8 +74,8 @@ fun FamilyScreen(
                 item {
                     Card {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Family invitation", style = MaterialTheme.typography.titleLarge)
-                            Text("Sign in with the Google account this invitation was created for.")
+                            Text(stringResource(R.string.family_invitation), style = MaterialTheme.typography.titleLarge)
+                            Text(stringResource(R.string.family_invitation_sign_in))
                             Button(
                                 enabled = !busy,
                                 onClick = {
@@ -85,11 +88,11 @@ fun FamilyScreen(
                                         }.onSuccess {
                                             onInviteHandled()
                                             reload()
-                                        }.onFailure { error = failureMessage(it) }
+                                        }.onFailure { error = failureMessage(context, it) }
                                         busy = false
                                     }
                                 },
-                            ) { Text("Accept with Google") }
+                            ) { Text(stringResource(R.string.family_accept_google)) }
                         }
                     }
                 }
@@ -105,28 +108,28 @@ fun FamilyScreen(
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(current.name, style = MaterialTheme.typography.headlineMedium)
-                        Text("Your role: ${current.role}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.family_your_role, localizedRole(current.role)), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
-                item { Text("Members", style = MaterialTheme.typography.titleLarge) }
+                item { Text(stringResource(R.string.family_members), style = MaterialTheme.typography.titleLarge) }
                 current.members.forEach { member ->
                     item(key = "member-${member.userId}") {
                         Card {
                             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(member.displayName ?: member.email, style = MaterialTheme.typography.titleMedium)
                                 Text(member.email, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(if (member.isCurrentUser) "${member.role} · You" else member.role)
+                                Text(if (member.isCurrentUser) "${localizedRole(member.role)} · ${stringResource(R.string.family_you)}" else localizedRole(member.role))
                                 if (current.role.equals("Owner", true) && !member.isCurrentUser) {
                                     TextButton(onClick = {
                                         scope.launch {
                                             busy = true
                                             runCatching { withContext(Dispatchers.IO) { api.removeMember(member.userId) } }
                                                 .onSuccess { reload() }
-                                                .onFailure { error = failureMessage(it) }
+                                                .onFailure { error = failureMessage(context, it) }
                                             busy = false
                                         }
-                                    }) { Text("Remove member") }
+                                    }) { Text(stringResource(R.string.family_remove_member)) }
                                 }
                             }
                         }
@@ -137,14 +140,14 @@ fun FamilyScreen(
                     item {
                         Card {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Invite member", style = MaterialTheme.typography.titleLarge)
-                                Text("Enter the exact Google email that must accept the invitation.")
+                                Text(stringResource(R.string.family_invite_member), style = MaterialTheme.typography.titleLarge)
+                                Text(stringResource(R.string.family_invite_email_help))
                                 OutlinedTextField(
                                     value = email,
                                     onValueChange = { email = it },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true,
-                                    label = { Text("Google email") },
+                                    label = { Text(stringResource(R.string.family_google_email)) },
                                 )
                                 Button(
                                     enabled = !busy && email.isNotBlank(),
@@ -158,34 +161,34 @@ fun FamilyScreen(
                                                     email = ""
                                                     reload()
                                                 }
-                                                .onFailure { error = failureMessage(it) }
+                                                .onFailure { error = failureMessage(context, it) }
                                             busy = false
                                         }
                                     },
-                                ) { Text("Create invite link") }
+                                ) { Text(stringResource(R.string.family_create_invite)) }
                             }
                         }
                     }
 
                     if (current.pendingInvites.isNotEmpty()) {
-                        item { Text("Pending invitations", style = MaterialTheme.typography.titleLarge) }
+                        item { Text(stringResource(R.string.family_pending_invites), style = MaterialTheme.typography.titleLarge) }
                         current.pendingInvites.forEach { invite ->
                             item(key = "invite-${invite.id}") {
                                 Card {
                                     Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Column(Modifier.weight(1f)) {
                                             Text(invite.expectedEmail)
-                                            Text("Expires: ${invite.expiresAt}", style = MaterialTheme.typography.bodySmall)
+                                            Text(stringResource(R.string.family_expires, invite.expiresAt), style = MaterialTheme.typography.bodySmall)
                                         }
                                         TextButton(onClick = {
                                             scope.launch {
                                                 busy = true
                                                 runCatching { withContext(Dispatchers.IO) { api.revokeInvite(invite.id) } }
                                                     .onSuccess { reload() }
-                                                    .onFailure { error = failureMessage(it) }
+                                                    .onFailure { error = failureMessage(context, it) }
                                                 busy = false
                                             }
-                                        }) { Text("Revoke") }
+                                        }) { Text(stringResource(R.string.family_revoke)) }
                                     }
                                 }
                             }
@@ -199,21 +202,21 @@ fun FamilyScreen(
     createdInvite?.inviteUrl?.let { url ->
         AlertDialog(
             onDismissRequest = { createdInvite = null },
-            title = { Text("Invitation ready") },
+            title = { Text(stringResource(R.string.family_invitation_ready)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Share this link only with ${createdInvite?.expectedEmail}.")
-                    Image(qrBitmap(url).asImageBitmap(), contentDescription = "Invitation QR code", modifier = Modifier.size(220.dp))
+                    Text(stringResource(R.string.family_share_only_with, createdInvite?.expectedEmail.orEmpty()))
+                    Image(qrBitmap(url).asImageBitmap(), contentDescription = stringResource(R.string.family_invitation_qr), modifier = Modifier.size(220.dp))
                     Text(url, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
-                TextButton(onClick = { shareLink(context, url) }) { Text("Share") }
+                TextButton(onClick = { shareLink(context, url) }) { Text(stringResource(R.string.family_share)) }
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { copyLink(context, url) }) { Text("Copy link") }
-                    TextButton(onClick = { createdInvite = null }) { Text("Done") }
+                    TextButton(onClick = { copyLink(context, url) }) { Text(stringResource(R.string.family_copy_link)) }
+                    TextButton(onClick = { createdInvite = null }) { Text(stringResource(R.string.done)) }
                 }
             },
         )
@@ -225,12 +228,12 @@ private fun shareLink(context: Context, url: String) {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, url)
     }
-    context.startActivity(Intent.createChooser(intent, "Share PhotoSync invitation"))
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.family_share_chooser)))
 }
 
 private fun copyLink(context: Context, url: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("PhotoSync invitation", url))
+    clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.family_clipboard_label), url))
 }
 
 private fun qrBitmap(value: String): Bitmap {
@@ -242,7 +245,28 @@ private fun qrBitmap(value: String): Bitmap {
     return bitmap
 }
 
-private fun failureMessage(error: Throwable): String = when (error) {
-    is FamilyApiException -> error.userMessage()
-    else -> error.message ?: "Family request failed."
+@Composable
+private fun localizedRole(role: String): String = stringResource(
+    when {
+        role.equals("Owner", true) -> R.string.family_role_owner
+        else -> R.string.family_role_member
+    },
+)
+
+private fun failureMessage(context: Context, error: Throwable): String {
+    if (error !is FamilyApiException) return error.message ?: context.getString(R.string.family_request_failed)
+    return runCatching {
+        val json = JSONObject(error.responseBody)
+        when (json.optString("error")) {
+            "wrong_google_account" -> context.getString(R.string.family_error_wrong_account, json.optString("expected_email"))
+            "invite_expired" -> context.getString(R.string.family_error_expired)
+            "invite_revoked" -> context.getString(R.string.family_error_revoked)
+            "invite_already_used" -> context.getString(R.string.family_error_used)
+            "invite_already_pending" -> context.getString(R.string.family_error_pending)
+            "already_member" -> context.getString(R.string.family_error_member)
+            "already_in_another_family" -> context.getString(R.string.family_error_other_family)
+            "invalid_email" -> context.getString(R.string.family_error_email)
+            else -> context.getString(R.string.family_request_failed_http, error.statusCode)
+        }
+    }.getOrDefault(context.getString(R.string.family_request_failed_http, error.statusCode))
 }

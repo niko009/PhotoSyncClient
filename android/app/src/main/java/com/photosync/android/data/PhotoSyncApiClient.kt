@@ -10,6 +10,8 @@ import com.photosync.android.data.remote.ServerSummaryDto
 import com.photosync.android.domain.model.AccessibleAlbum
 import com.photosync.android.domain.model.GoogleAccount
 import org.json.JSONObject
+import java.io.File
+import java.io.InputStream
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.OutputStreamWriter
@@ -137,6 +139,24 @@ class PhotoSyncApiClient(
 
     fun downloadPreview(serverFileId: Int): ByteArray = getBytes("/api/files/$serverFileId/preview")
 
+    fun downloadFile(serverFileId: Int, target: File) = downloadToFile("/api/files/$serverFileId/download", target)
+
+    fun downloadPreview(serverFileId: Int, target: File) = downloadToFile("/api/files/$serverFileId/preview", target)
+
+    private fun downloadToFile(path: String, target: File) {
+        val connection = openConnection(path, "GET")
+        val temporary = File.createTempFile("download-", ".part", target.parentFile)
+        try {
+            check(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
+            val count = connection.inputStream.use { input -> temporary.outputStream().use { input.copyTo(it, 64 * 1024) } }
+            check(connection.contentLengthLong < 0 || count == connection.contentLengthLong) { "Incomplete download" }
+            check(temporary.renameTo(target)) { "Could not publish downloaded file" }
+        } finally {
+            temporary.delete()
+            connection.disconnect()
+        }
+    }
+
     fun googleAccount(): GoogleAccount? = getJson("/api/auth/google/me").toGoogleAccount()
 
     fun signInWithGoogle(idToken: String): GoogleAccount = postJson(
@@ -156,7 +176,7 @@ class PhotoSyncApiClient(
         sizeBytes: Long,
         sha256: String,
         createdAtIso: String,
-        fileBytes: ByteArray,
+        openFile: () -> InputStream,
     ): FileUploadResultDto = uploadFileInternal(
         albumId = null,
         deviceUuid = deviceUuid,
@@ -166,7 +186,7 @@ class PhotoSyncApiClient(
         sizeBytes = sizeBytes,
         sha256 = sha256,
         createdAtIso = createdAtIso,
-        fileBytes = fileBytes,
+        openFile = openFile,
     )
 
     fun uploadFileToAlbum(
@@ -176,7 +196,7 @@ class PhotoSyncApiClient(
         sizeBytes: Long,
         sha256: String,
         createdAtIso: String,
-        fileBytes: ByteArray,
+        openFile: () -> InputStream,
     ): FileUploadResultDto = uploadFileInternal(
         albumId = albumId,
         deviceUuid = null,
@@ -186,7 +206,7 @@ class PhotoSyncApiClient(
         sizeBytes = sizeBytes,
         sha256 = sha256,
         createdAtIso = createdAtIso,
-        fileBytes = fileBytes,
+        openFile = openFile,
     )
 
     private fun uploadFileInternal(
@@ -198,42 +218,46 @@ class PhotoSyncApiClient(
         sizeBytes: Long,
         sha256: String,
         createdAtIso: String,
-        fileBytes: ByteArray,
+        openFile: () -> InputStream,
     ): FileUploadResultDto {
         val boundary = "PhotoSyncBoundary${System.currentTimeMillis()}"
         val connection = openConnection("/api/files/upload", "POST")
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        connection.setChunkedStreamingMode(64 * 1024)
+        connection.readTimeout = 120_000
+        try {
 
-        DataOutputStream(connection.outputStream).use { output ->
-            if (albumId != null) {
-                writeFormField(output, boundary, "album_id", albumId.toString())
-            } else {
-                writeFormField(output, boundary, "device_uuid", requireNotNull(deviceUuid))
-                writeFormField(output, boundary, "album_name", requireNotNull(albumName))
+            DataOutputStream(connection.outputStream).use { output ->
+                if (albumId != null) {
+                    writeFormField(output, boundary, "album_id", albumId.toString())
+                } else {
+                    writeFormField(output, boundary, "device_uuid", requireNotNull(deviceUuid))
+                    writeFormField(output, boundary, "album_name", requireNotNull(albumName))
+                }
+                writeFormField(output, boundary, "original_name", originalName)
+                writeFormField(output, boundary, "mime_type", mimeType)
+                writeFormField(output, boundary, "size_bytes", sizeBytes.toString())
+                writeFormField(output, boundary, "sha256", sha256)
+                writeFormField(output, boundary, "created_at", createdAtIso)
+                writeFormField(output, boundary, "is_video", mimeType.startsWith("video/").toString())
+
+                output.writeBytes("--$boundary\r\n")
+                val headerName = originalName.replace(Regex("[\\r\\n\\\"]"), "_")
+                output.write("Content-Disposition: form-data; name=\"file\"; filename=\"$headerName\"\r\n".toByteArray(Charsets.UTF_8))
+                output.writeBytes("Content-Type: " + mimeType.replace("\r", "").replace("\n", "") + "\r\n\r\n")
+                openFile().use { input -> input.copyTo(output, 64 * 1024) }
+                output.writeBytes("\r\n--$boundary--\r\n")
+                output.flush()
             }
-            writeFormField(output, boundary, "original_name", originalName)
-            writeFormField(output, boundary, "mime_type", mimeType)
-            writeFormField(output, boundary, "size_bytes", sizeBytes.toString())
-            writeFormField(output, boundary, "sha256", sha256)
-            writeFormField(output, boundary, "created_at", createdAtIso)
-            writeFormField(output, boundary, "is_video", mimeType.startsWith("video/").toString())
 
-            output.writeBytes("--$boundary\r\n")
-            val headerName = originalName.replace(Regex("[\\r\\n\\\"]"), "_")
-            output.write("Content-Disposition: form-data; name=\"file\"; filename=\"$headerName\"\r\n".toByteArray(Charsets.UTF_8))
-            output.writeBytes("Content-Type: " + mimeType.replace("\r", "").replace("\n", "") + "\r\n\r\n")
-            output.write(fileBytes)
-            output.writeBytes("\r\n--$boundary--\r\n")
-            output.flush()
-        }
-
-        val response = execute(connection)
-        return FileUploadResultDto(
-            serverFileId = response.getInt("server_file_id"),
-            storedName = response.getString("stored_name"),
-            relativePath = response.getString("relative_path"),
-        )
+            val response = execute(connection)
+            return FileUploadResultDto(
+                serverFileId = response.getInt("server_file_id"),
+                storedName = response.getString("stored_name"),
+                relativePath = response.getString("relative_path"),
+            )
+        } finally { connection.disconnect() }
     }
 
     private fun parseFiles(response: JSONObject): List<FileItemDto> {

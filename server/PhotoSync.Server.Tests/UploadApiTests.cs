@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using PhotoSync.Server.Contracts;
@@ -14,6 +15,7 @@ public sealed class UploadApiTests(TestServerFactory factory) : IClassFixture<Te
     public async Task UploadFlow_RegistersAlbumStoresFileAndReturnsExistingOnCheck()
     {
         var deviceUuid = Guid.NewGuid();
+        AuthenticateAs(deviceUuid);
 
         var registerResponse = await _client.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
             deviceUuid,
@@ -52,7 +54,7 @@ public sealed class UploadApiTests(TestServerFactory factory) : IClassFixture<Te
 
         var uploadPayload = await uploadResponse.Content.ReadFromJsonAsync<UploadFileResponse>();
         Assert.NotNull(uploadPayload);
-        Assert.Contains("devices/", uploadPayload!.RelativePath);
+        Assert.EndsWith("/Family/IMG_0001.jpg", uploadPayload!.RelativePath);
 
         var checkResponse = await _client.PostAsJsonAsync("/api/files/check", new FileCheckRequest(
             deviceUuid,
@@ -71,10 +73,26 @@ public sealed class UploadApiTests(TestServerFactory factory) : IClassFixture<Te
     [Fact]
     public async Task SummaryEndpoints_ReturnExpectedCounts()
     {
+        var deviceUuid = Guid.NewGuid();
+        AuthenticateAs(deviceUuid);
+        (await _client.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            deviceUuid,
+            "Summary phone",
+            "0.6.8"))).EnsureSuccessStatusCode();
+
         var summaryResponse = await _client.GetAsync("/api/stats/summary");
         Assert.Equal(HttpStatusCode.OK, summaryResponse.StatusCode);
 
         var devicesResponse = await _client.GetAsync("/api/devices");
         Assert.Equal(HttpStatusCode.OK, devicesResponse.StatusCode);
+    }
+
+    private void AuthenticateAs(Guid deviceUuid)
+    {
+        _client.DefaultRequestHeaders.Remove("X-PhotoSync-Device");
+        _client.DefaultRequestHeaders.Add("X-PhotoSync-Device", deviceUuid.ToString());
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            Convert.ToHexString(RandomNumberGenerator.GetBytes(32)));
     }
 }

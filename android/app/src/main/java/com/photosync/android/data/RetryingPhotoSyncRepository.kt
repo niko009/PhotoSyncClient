@@ -5,12 +5,8 @@ import android.util.Log
 import com.photosync.android.domain.model.ConnectionStatus
 import com.photosync.android.domain.model.PhotoSyncStatus
 import com.photosync.android.domain.repository.PhotoSyncRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -22,15 +18,6 @@ class RetryingPhotoSyncRepository(
     private val delegate: PhotoSyncRepository,
 ) : PhotoSyncRepository by delegate {
     private val retryMutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    init {
-        scope.launch {
-            delay(1_500)
-            runCatching { refresh() }
-                .onFailure { error -> Log.e(TAG, "Initial retry refresh failed", error) }
-        }
-    }
 
     override suspend fun refresh() {
         delegate.refresh()
@@ -66,14 +53,12 @@ class RetryingPhotoSyncRepository(
                     val uploaded = runCatching {
                         delegate.uploadToFolder(summary.id, uri)
                     }.onFailure { error ->
+                        if (error is CancellationException) throw error
                         Log.e(TAG, "Legacy retry failed for ${photo.title}", error)
                     }.getOrDefault(false)
 
                     if (uploaded) {
                         // Local queue cleanup only; server originals are preserved.
-                        delegate.deletePhoto(summary.id, photo.id)
-                    } else if (uri.isRevokedPhotoPickerUri()) {
-                        Log.w(TAG, "Dropping unrecoverable Photo Picker URI for ${photo.title}")
                         delegate.deletePhoto(summary.id, photo.id)
                     }
                 }

@@ -18,13 +18,21 @@ public sealed class CapacityTests
     }
 
     [Fact]
-    public async Task DeviceRegistrationIsNotBlockedByLegacyDeviceCap()
+    public async Task DeviceCapBlocksNewDevicesButAllowsAuthenticatedExistingDevices()
     {
         await using var factory = new TestPhotoSyncFactory(new Dictionary<string, string?> { ["PhotoSync:MaxDevices"] = "1" });
         using var client = factory.CreateClient(); var first = Guid.NewGuid();
         (await Register(client, first)).EnsureSuccessStatusCode();
-        Assert.Equal(HttpStatusCode.OK, (await Register(client, Guid.NewGuid())).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Register(client, Guid.NewGuid())).StatusCode);
         (await Register(client, first)).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task ClosedEnrollmentRejectsNewDevices()
+    {
+        await using var factory = new TestPhotoSyncFactory(new Dictionary<string, string?> { ["PhotoSync:AllowDeviceEnrollment"] = "false" });
+        using var client = factory.CreateClient();
+        Assert.Equal(HttpStatusCode.Forbidden, (await Register(client, Guid.NewGuid())).StatusCode);
     }
 
     [Theory]

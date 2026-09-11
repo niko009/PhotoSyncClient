@@ -4,7 +4,7 @@ PhotoSync is a self-hosted, one-way photo and video synchronization system for A
 
 The Android application organizes media into logical folders and uploads it over the local network. The ASP.NET Core server stores the original files in ordinary folders and keeps metadata in SQLite. A successful upload is verified and committed on the server before the client treats the item as synchronized.
 
-> **Status:** 0.6.7-beta under active development. This repository is the canonical source for both the Android client and the server.
+> **Status:** 0.6.8-beta under active development. This repository is the canonical source for both the Android client and the server.
 
 Version 0.6.7-beta (`versionCode 6007`) opens Android's photo gallery instead of the document browser and repairs all post-sync cleanup modes. Offline uploads now preserve the original URI and media metadata, temporary queue copies are removed, compression leaves a smaller local image, and original deletion is requested only after a verified upload through Android's system confirmation. It also retains the reliable synchronization, in-app update flow, and privacy-aware SuperAdmin server journal introduced in 0.6.6.
 
@@ -57,6 +57,12 @@ dotnet run --project server/PhotoSync.Server/PhotoSync.Server.csproj
 
 By default, runtime files and the SQLite database are written below `data/`. This directory is intentionally excluded from Git.
 
+New-device enrollment is closed by default (`PhotoSync:AllowDeviceEnrollment=false`). Existing installations must present their current secret. An operator can explicitly enable enrollment with `PhotoSync__AllowDeviceEnrollment=true` while restricting access to trusted clients at the proxy; close it again after enrollment. `PhotoSync:MaxDevices` defaults to 5. Reinstallations with a new identity count as new devices; a known UUID cannot recover a lost secret.
+
+The configurable file limit is now 2 GiB (`PhotoSync:MaxFileBytes`). Reverse-proxy request limits and timeouts must also support the desired size. Uploads are streamed but currently restart from the beginning after a connection failure; resumable upload is not implemented.
+
+See [hardening results and remaining device checks](docs/hardening-2026-09-07.md) before deploying these changes.
+
 ## Build the Android application
 
 Requirements: JDK 17 (build tested with Corretto 17), Android SDK 34.
@@ -87,4 +93,4 @@ dotnet test server/PhotoSync.Server.slnx
 - Google sign-in links identity; PhotoSync authorization controls family and folder access.
 - Family membership alone does not expose another member's private folders.
 - Folder sharing supports Private, WholeFamily, and SelectedPeople with View/Contribute/Owner semantics.
-- Enrollment accepts new devices automatically up to the configured cap (5 by default). Initial storage and request limits are implemented; internet hosting still requires TLS, operator credentials, trusted proxy setup and operational checks.
+- Enrollment requires explicit operator enablement and respects the configured cap (5 by default). Internet hosting requires TLS, operator credentials, trusted proxy setup and operational checks.

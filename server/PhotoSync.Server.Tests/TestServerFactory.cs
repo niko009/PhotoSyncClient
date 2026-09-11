@@ -19,7 +19,8 @@ public sealed class TestServerFactory : WebApplicationFactory<Program>
             {
                 ["PhotoSync:ServerName"] = "PhotoSync Test Server",
                 ["PhotoSync:StorageRoot"] = Path.Combine(_root, "data"),
-                ["ConnectionStrings:PhotoSync"] = $"Data Source={Path.Combine(_root, "data", "system", "photosync.db")}"
+                ["PhotoSync:AllowDeviceEnrollment"] = "true",
+                ["ConnectionStrings:PhotoSync"] = $"Data Source={Path.Combine(_root, "data", "system", "photosync.db")};Pooling=False"
             });
         });
     }
