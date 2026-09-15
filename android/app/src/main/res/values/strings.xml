@@ -67,4 +67,17 @@
     <string name="share_import_upload">Upload to selected folder</string>
     <string name="share_import_new_folder">New folder</string>
     <string name="share_import_create_and_upload">Create and upload</string>
+    <string name="share_import_queue">Upload in background</string>
+    <string name="share_import_background_hint">Choose a folder. PhotoSync will return you to the gallery and upload in the background.</string>
+    <string name="share_import_no_available_folders">No writable folders are available. Open PhotoSync to create a folder or check your access.</string>
+    <string name="cloud_only_badge">Cloud only</string>
+    <string name="share_notification_channel">Shared media uploads</string>
+    <string name="share_notification_uploading">Uploading to PhotoSync</string>
+    <string name="share_notification_complete">PhotoSync upload complete</string>
+    <string name="share_notification_failed">PhotoSync upload paused</string>
+    <string name="share_notification_retry">The upload failed and will retry when the server is available.</string>
+    <plurals name="share_notification_file_count">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
 </resources>

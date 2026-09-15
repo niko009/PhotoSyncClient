@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <application
         android:name=".PhotoSyncApplication"
@@ -24,14 +26,6 @@
             </intent-filter>
 
             <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="image/*" />
-                <data android:mimeType="video/*" />
-            </intent-filter>
-
-            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
@@ -42,6 +36,19 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="photosync.bacus.dev" android:pathPrefix="/join/" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".ShareReceiverActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@style/Theme.PhotoSync">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
     </application>

@@ -9,7 +9,6 @@ import com.photosync.android.domain.repository.PhotoSyncRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -17,10 +16,9 @@ data class ShareImportUiState(
     val folders: List<FolderSummary> = emptyList(),
     val sharedUris: List<Uri> = emptyList(),
     val selectedFolderId: String? = null,
-    val isUploading: Boolean = false,
-    val processedCount: Int = 0,
-    val totalCount: Int = 0,
-    val isFinished: Boolean = false,
+    val isLoadingFolders: Boolean = true,
+    val isQueueing: Boolean = false,
+    val isQueued: Boolean = false,
     val errorMessage: String? = null,
 )
 
@@ -35,123 +33,75 @@ class ShareImportViewModel(
             repository.observeFolders().collect { allFolders ->
                 val folders = allFolders.filter { it.canContribute }
                 _state.update { current ->
-                    val selected = current.selectedFolderId
-                        ?.takeIf { id -> folders.any { it.id == id } }
-                        ?: folders.firstOrNull()?.id
-                    current.copy(folders = folders, selectedFolderId = selected)
-                }
-            }
-        }
-    }
-
-    fun setSharedUris(uris: List<Uri>) {
-        val unique = uris.distinct()
-        if (unique == _state.value.sharedUris || _state.value.isUploading) return
-        _state.update {
-            it.copy(
-                sharedUris = unique,
-                processedCount = 0,
-                totalCount = unique.size,
-                isFinished = false,
-                errorMessage = null,
-            )
-        }
-    }
-
-    fun selectFolder(folderId: String) {
-        if (_state.value.isUploading) return
-        _state.update { it.copy(selectedFolderId = folderId, errorMessage = null) }
-    }
-
-    fun importToSelectedFolder() {
-        val folderId = _state.value.selectedFolderId
-        if (folderId == null) {
-            _state.update { it.copy(errorMessage = "Choose a folder first.") }
-            return
-        }
-        importToFolder(folderId)
-    }
-
-    fun createFolderAndImport(name: String) {
-        val normalized = name.trim()
-        if (normalized.isEmpty()) {
-            _state.update { it.copy(errorMessage = "Folder name cannot be empty.") }
-            return
-        }
-        if (_state.value.isUploading) return
-
-        viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    isUploading = true,
-                    processedCount = 0,
-                    totalCount = it.sharedUris.size,
-                    isFinished = false,
-                    errorMessage = null,
-                )
-            }
-
-            runCatching {
-                repository.addFolder(normalized)
-                repository.refresh()
-                val folders = repository.observeFolders().first { items ->
-                    items.any { it.ownedByMe && it.name.equals(normalized, ignoreCase = true) }
-                }
-                val folder = folders.first { it.ownedByMe && it.name.equals(normalized, ignoreCase = true) }
-                uploadAll(folder.id)
-            }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        isUploading = false,
-                        errorMessage = error.message ?: "Could not create the folder.",
+                    current.copy(
+                        folders = folders,
+                        selectedFolderId = current.selectedFolderId
+                            ?.takeIf { id -> folders.any { it.id == id } },
+                        isLoadingFolders = false,
                     )
                 }
             }
         }
-    }
-
-    private fun importToFolder(folderId: String) {
-        if (_state.value.isUploading) return
         viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    isUploading = true,
-                    processedCount = 0,
-                    totalCount = it.sharedUris.size,
-                    isFinished = false,
-                    errorMessage = null,
-                )
-            }
-            runCatching { uploadAll(folderId) }
+            runCatching { repository.refresh() }
                 .onFailure { error ->
                     _state.update {
                         it.copy(
-                            isUploading = false,
-                            errorMessage = error.message ?: "Import failed.",
+                            isLoadingFolders = false,
+                            errorMessage = error.message ?: "Could not load folders.",
                         )
                     }
                 }
         }
     }
 
-    private suspend fun uploadAll(folderId: String) {
-        val uris = _state.value.sharedUris
-        if (uris.isEmpty()) {
-            _state.update { it.copy(isUploading = false, errorMessage = "No media was shared.") }
-            return
-        }
-
-        uris.forEachIndexed { index, uri ->
-            check(repository.uploadToFolder(folderId, uri)) { "Import failed." }
-            _state.update { it.copy(processedCount = index + 1) }
-        }
-        repository.refresh()
+    fun setSharedUris(uris: List<Uri>) {
+        val unique = uris.distinct()
+        if (unique == _state.value.sharedUris || _state.value.isQueueing) return
         _state.update {
             it.copy(
-                isUploading = false,
-                isFinished = true,
-                processedCount = uris.size,
+                sharedUris = unique,
+                selectedFolderId = null,
+                isQueued = false,
+                errorMessage = null,
             )
+        }
+    }
+
+    fun selectFolder(folderId: String) {
+        if (_state.value.isQueueing) return
+        _state.update { it.copy(selectedFolderId = folderId, errorMessage = null) }
+    }
+
+    fun enqueueToSelectedFolder() {
+        val folderId = _state.value.selectedFolderId
+        if (folderId == null) {
+            _state.update { it.copy(errorMessage = "Choose a folder first.") }
+            return
+        }
+        if (_state.value.isQueueing) return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    isQueueing = true,
+                    isQueued = false,
+                    errorMessage = null,
+                )
+            }
+            runCatching {
+                check(repository.enqueueSharedMedia(folderId, _state.value.sharedUris)) {
+                    "Could not queue the selected media."
+                }
+            }
+                .onSuccess { _state.update { it.copy(isQueueing = false, isQueued = true) } }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            isQueueing = false,
+                            errorMessage = error.message ?: "Could not queue the selected media.",
+                        )
+                    }
+                }
         }
     }
 

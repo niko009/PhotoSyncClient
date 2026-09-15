@@ -26,8 +26,23 @@ public sealed class GoogleAuthTests
         (await first.PostAsJsonAsync("/api/auth/google/sign-in", new { id_token = "first" })).EnsureSuccessStatusCode();
         var albumResponse = await first.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(firstUuid, "Shared"));
         albumResponse.EnsureSuccessStatusCode();
+        var album = (await albumResponse.Content.ReadFromJsonAsync<CreateAlbumResponse>())!;
         Assert.Equal("Phone_Family_User/Shared",
-            (await albumResponse.Content.ReadFromJsonAsync<CreateAlbumResponse>())!.ServerFolderPath);
+            album.ServerFolderPath);
+        var original = System.Text.Encoding.UTF8.GetBytes("cloud-photo");
+        using (var upload = new MultipartFormDataContent
+        {
+            { new StringContent(album.AlbumId.ToString()), "album_id" },
+            { new StringContent("cloud.jpg"), "original_name" },
+            { new StringContent("image/jpeg"), "mime_type" },
+            { new StringContent(original.Length.ToString()), "size_bytes" },
+            { new StringContent(Convert.ToHexString(SHA256.HashData(original)).ToLowerInvariant()), "sha256" },
+            { new StringContent("2026-09-15T10:00:00Z"), "created_at" },
+            { new ByteArrayContent(original), "file", "cloud.jpg" },
+        })
+        {
+            (await first.PostAsync("/api/files/upload", upload)).EnsureSuccessStatusCode();
+        }
         var linked = await second.PostAsJsonAsync("/api/auth/google/sign-in", new { id_token = "second" });
         linked.EnsureSuccessStatusCode();
         Assert.Equal(2, (await linked.Content.ReadFromJsonAsync<GoogleAccountResponse>())!.LinkedDevices);
@@ -38,6 +53,10 @@ public sealed class GoogleAuthTests
         Assert.Equal(new[] { firstId, secondId }, devices.GetProperty("devices").EnumerateArray()
             .Select(x => x.GetProperty("id").GetInt32()).Order().ToArray());
         Assert.Equal(HttpStatusCode.OK, (await second.GetAsync($"/api/albums?device_uuid={firstUuid}")).StatusCode);
+        var cloudFiles = await second.GetFromJsonAsync<FileListResponse>($"/api/files/album/{album.AlbumId}");
+        var cloudFile = Assert.Single(cloudFiles!.Files);
+        Assert.Equal("cloud.jpg", cloudFile.OriginalName);
+        Assert.Equal(original, await second.GetByteArrayAsync(cloudFile.DownloadUrl));
 
         (await second.PostAsync("/api/auth/google/sign-out", null)).EnsureSuccessStatusCode();
         Assert.Equal(HttpStatusCode.NoContent, (await second.GetAsync("/api/auth/google/me")).StatusCode);

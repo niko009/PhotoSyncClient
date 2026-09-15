@@ -7,10 +7,10 @@ Implemented in Android `0.5.0-beta`.
 1. Open the normal Android gallery / Google Photos / Samsung Gallery.
 2. Select one or many photos or videos.
 3. Tap **Share** and choose **PhotoSync**.
-4. PhotoSync opens a dedicated import screen showing the number of shared items.
-5. Choose an existing PhotoSync folder, or create a new folder directly from the import screen.
-6. PhotoSync uploads the shared media sequentially and shows batch progress.
-7. When the batch is complete, the user returns to the normal PhotoSync UI.
+4. PhotoSync opens a compact folder chooser showing the number of shared items.
+5. Choose a writable PhotoSync folder and confirm the background upload.
+6. PhotoSync first copies the shared media into its durable local queue, closes the chooser, and returns to the gallery.
+7. WorkManager uploads the batch in the background and updates a system notification when it completes or needs to retry.
 
 The original media remains in the Android gallery. This flow does not move or delete the source files. Existing per-folder cleanup rules still apply after a successful upload because the normal `PhotoSyncRepository.uploadToFolder` pipeline is reused.
 
@@ -26,22 +26,20 @@ for:
 - `image/*`
 - `video/*`
 
-URIs are read from `Intent.EXTRA_STREAM` and `ClipData`, deduplicated, and handed to the Compose navigation layer. The activity keeps the original share intent until the import is finished or cancelled so the temporary URI read grants remain valid during the import screen.
+URIs are read from `Intent.EXTRA_STREAM` and `ClipData` by a dedicated, short-lived `ShareReceiverActivity`. They are deduplicated and handed to the compact Compose chooser. The activity remains alive until all selected media has been copied to app-private queue storage, so temporary URI read grants cannot expire before queueing finishes.
 
-After finishing or cancelling, the share payload is cleared and the activity intent is replaced with `ACTION_MAIN` to prevent the same batch from being imported again after a configuration change.
+After durable queueing or cancellation, the receiver activity finishes and Android returns to the source gallery. The normal PhotoSync activity and navigation stack are not opened.
 
 ## Import screen
 
 `ui/share/ShareImportScreen.kt` provides:
 
-- existing PhotoSync folder selection;
-- create-folder-and-upload in one step;
+- explicit writable-folder selection for every share;
 - selected-media count;
-- sequential upload progress;
-- cancel before upload;
-- completion action.
+- durable queueing progress;
+- cancellation before queueing.
 
-`ShareImportViewModel` uses the existing `PhotoSyncRepository` and server API; no new server endpoint is required.
+`ShareImportViewModel` queues the batch through the existing offline-first repository. The persisted WorkManager queue performs the server upload; no new server endpoint is required.
 
 ## Storage result
 
@@ -50,5 +48,5 @@ The server receives files exactly as uploads initiated from inside PhotoSync. Wi
 ## Known follow-ups
 
 - Real Android gallery albums backed by `MediaStore` are a separate feature. PhotoSync logical folders are not yet created as physical Android gallery albums.
-- Background/resumable batch transfer through WorkManager can be added later for very large imports or process death during upload.
-- Per-file success/failure reporting can be made richer; current repository status remains the source of truth for failed items.
+- Uploads restart from the beginning after a connection failure; server-side resumable upload is still a separate feature.
+- Notifications require Android notification permission on Android 13 and newer.

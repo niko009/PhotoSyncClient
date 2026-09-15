@@ -67,4 +67,18 @@
     <string name="share_import_upload">Incarca in dosarul selectat</string>
     <string name="share_import_new_folder">Dosar nou</string>
     <string name="share_import_create_and_upload">Creeaza si incarca</string>
+    <string name="share_import_queue">Incarca in fundal</string>
+    <string name="share_import_background_hint">Alege un dosar. PhotoSync te va intoarce in galerie si va incarca in fundal.</string>
+    <string name="share_import_no_available_folders">Nu exista dosare in care poti incarca. Deschide PhotoSync pentru a crea un dosar sau a verifica accesul.</string>
+    <string name="cloud_only_badge">Doar in cloud</string>
+    <string name="share_notification_channel">Incarcari din galerie</string>
+    <string name="share_notification_uploading">Se incarca in PhotoSync</string>
+    <string name="share_notification_complete">Incarcarea PhotoSync s-a terminat</string>
+    <string name="share_notification_failed">Incarcarea PhotoSync este intrerupta</string>
+    <string name="share_notification_retry">Incarcarea a esuat si va fi reincercata cand serverul este disponibil.</string>
+    <plurals name="share_notification_file_count">
+        <item quantity="one">%1$d fisier</item>
+        <item quantity="few">%1$d fisiere</item>
+        <item quantity="other">%1$d de fisiere</item>
+    </plurals>
 </resources>

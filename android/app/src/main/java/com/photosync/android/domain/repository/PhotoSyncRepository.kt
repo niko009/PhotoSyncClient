@@ -22,6 +22,8 @@ interface PhotoSyncRepository {
     suspend fun updateFolderPhotoCleanupPolicy(folderId: String, policy: PhotoCleanupPolicy?)
     suspend fun addFolder(name: String)
     suspend fun uploadToFolder(folderId: String, uri: Uri): Boolean
+    suspend fun enqueueSharedMedia(folderId: String, uris: List<Uri>): Boolean =
+        uris.isNotEmpty() && uris.all { uploadToFolder(folderId, it) }
     suspend fun uploadStagedMedia(
         folderId: String,
         uploadUri: Uri,

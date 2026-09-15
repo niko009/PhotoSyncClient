@@ -132,6 +132,39 @@ class OfflineFirstPhotoSyncRepository(
         true
     }
 
+    override suspend fun enqueueSharedMedia(folderId: String, uris: List<Uri>): Boolean = queueMutex.withLock {
+        val uniqueUris = uris.distinct()
+        if (uniqueUris.isEmpty()) return@withLock false
+        val folder = delegate.observeFolder(folderId).first() ?: return@withLock false
+        if (!folder.canContribute) return@withLock false
+
+        val batchId = UUID.randomUUID().toString()
+        val staged = mutableListOf<OfflineQueueItem>()
+        val queuedItems = runCatching {
+            withContext(Dispatchers.IO) {
+                uniqueUris.map { uri ->
+                    createQueueItem(
+                        folderId = folderId,
+                        sourceUri = uri,
+                        shareBatchId = batchId,
+                        shareBatchSize = uniqueUris.size,
+                    ).also(staged::add)
+                }
+            }
+        }.onFailure { error ->
+            staged.forEach(::deleteStagedFile)
+            if (error is CancellationException) throw error
+            Log.e(TAG, "Could not stage shared media", error)
+        }.getOrNull() ?: return@withLock false
+
+        val nextQueue = queue.value + queuedItems
+        persistQueue(nextQueue)
+        queue.value = nextQueue
+        ShareUploadNotifier.showQueued(appContext, batchId, uniqueUris.size)
+        OfflineSyncScheduler.enqueue(appContext)
+        true
+    }
+
     override suspend fun refresh() {
         // Order matters: base refresh first creates any offline-created folder on
         // the server, then queued media can safely upload into that folder.
@@ -173,9 +206,12 @@ class OfflineFirstPhotoSyncRepository(
         if (!hasNetwork()) return@withLock
         val snapshot = queue.value.toList()
         snapshot.forEach { item ->
-            runCatching { syncItem(item) }
+            runCatching { check(syncItem(item)) { "Server did not accept ${item.title}." } }
                 .onFailure { if (it is CancellationException) throw it }
-                .onFailure { error -> Log.e(TAG, "Queued sync failed for ${item.title}", error) }
+                .onFailure { error ->
+                    Log.e(TAG, "Queued sync failed for ${item.title}", error)
+                    notifyShareFailure(item)
+                }
         }
     }
 
@@ -206,10 +242,20 @@ class OfflineFirstPhotoSyncRepository(
             .forEach { stale -> delegate.deletePhoto(item.folderId, stale.id) }
 
         removeQueueItem(item, deleteStagedFile = true)
+        item.shareBatchId?.let { batchId ->
+            if (queue.value.none { it.shareBatchId == batchId }) {
+                ShareUploadNotifier.showComplete(appContext, batchId, item.shareBatchSize ?: 1)
+            }
+        }
         return true
     }
 
-    private fun createQueueItem(folderId: String, sourceUri: Uri): OfflineQueueItem {
+    private fun createQueueItem(
+        folderId: String,
+        sourceUri: Uri,
+        shareBatchId: String? = null,
+        shareBatchSize: Int? = null,
+    ): OfflineQueueItem {
         val id = UUID.randomUUID().toString()
         val title = resolveDisplayName(sourceUri) ?: "photo-${System.currentTimeMillis()}"
         val mimeType = appContext.contentResolver.getType(sourceUri)
@@ -223,6 +269,8 @@ class OfflineFirstPhotoSyncRepository(
             mimeType = mimeType,
             sourceUri = sourceUri.toString(),
             stagedUri = durableUri.toString(),
+            shareBatchId = shareBatchId,
+            shareBatchSize = shareBatchSize,
         )
     }
 
@@ -249,12 +297,23 @@ class OfflineFirstPhotoSyncRepository(
         val nextQueue = queue.value.filterNot { it.id == item.id }
         persistQueue(nextQueue)
         queue.value = nextQueue
-        if (deleteStagedFile) {
-            val uri = Uri.parse(item.stagedUri)
-            if (uri.scheme == "file") {
-                runCatching { uri.path?.let(::File)?.delete() }
-            }
+        if (deleteStagedFile) deleteStagedFile(item)
+    }
+
+    private fun deleteStagedFile(item: OfflineQueueItem) {
+        val uri = Uri.parse(item.stagedUri)
+        if (uri.scheme == "file") runCatching { uri.path?.let(::File)?.delete() }
+    }
+
+    private suspend fun notifyShareFailure(item: OfflineQueueItem) {
+        val batchId = item.shareBatchId ?: return
+        if (queue.value.filter { it.shareBatchId == batchId }.any { it.failureNotified }) return
+        ShareUploadNotifier.showFailed(appContext, batchId)
+        val updated = queue.value.map { queued ->
+            if (queued.shareBatchId == batchId) queued.copy(failureNotified = true) else queued
         }
+        persistQueue(updated)
+        queue.value = updated
     }
 
     private fun hasNetwork(): Boolean {
@@ -297,6 +356,9 @@ class OfflineFirstPhotoSyncRepository(
                             stagedUri = item.optString("staged_uri")
                                 .takeIf { it.isNotBlank() }
                                 ?: item.getString("local_uri"),
+                            shareBatchId = item.optString("share_batch_id").takeIf { it.isNotBlank() },
+                            shareBatchSize = item.optInt("share_batch_size").takeIf { it > 0 },
+                            failureNotified = item.optBoolean("failure_notified", false),
                         ),
                     )
                 }
@@ -314,7 +376,10 @@ class OfflineFirstPhotoSyncRepository(
                     .put("title", item.title)
                     .put("mime_type", item.mimeType)
                     .put("source_uri", item.sourceUri)
-                    .put("staged_uri", item.stagedUri),
+                    .put("staged_uri", item.stagedUri)
+                    .put("share_batch_id", item.shareBatchId ?: JSONObject.NULL)
+                    .put("share_batch_size", item.shareBatchSize ?: JSONObject.NULL)
+                    .put("failure_notified", item.failureNotified),
             )
         }
         check(appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -330,6 +395,9 @@ class OfflineFirstPhotoSyncRepository(
         val mimeType: String,
         val sourceUri: String,
         val stagedUri: String,
+        val shareBatchId: String? = null,
+        val shareBatchSize: Int? = null,
+        val failureNotified: Boolean = false,
     ) {
         val photoId: String get() = OFFLINE_ID_PREFIX + id
 

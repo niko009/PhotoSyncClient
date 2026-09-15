@@ -67,4 +67,19 @@
     <string name="share_import_upload">Загрузить в выбранную папку</string>
     <string name="share_import_new_folder">Новая папка</string>
     <string name="share_import_create_and_upload">Создать и загрузить</string>
+    <string name="share_import_queue">Загрузить в фоне</string>
+    <string name="share_import_background_hint">Выберите папку. PhotoSync вернёт вас в галерею и продолжит загрузку в фоне.</string>
+    <string name="share_import_no_available_folders">Нет доступных для загрузки папок. Откройте PhotoSync, чтобы создать папку или проверить доступ.</string>
+    <string name="cloud_only_badge">Только в облаке</string>
+    <string name="share_notification_channel">Загрузка из галереи</string>
+    <string name="share_notification_uploading">Загрузка в PhotoSync</string>
+    <string name="share_notification_complete">Загрузка в PhotoSync завершена</string>
+    <string name="share_notification_failed">Загрузка в PhotoSync приостановлена</string>
+    <string name="share_notification_retry">Не удалось загрузить файлы. Повторим попытку, когда сервер будет доступен.</string>
+    <plurals name="share_notification_file_count">
+        <item quantity="one">%1$d файл</item>
+        <item quantity="few">%1$d файла</item>
+        <item quantity="many">%1$d файлов</item>
+        <item quantity="other">%1$d файла</item>
+    </plurals>
 </resources>

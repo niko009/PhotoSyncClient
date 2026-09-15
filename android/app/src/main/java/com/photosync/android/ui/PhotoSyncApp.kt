@@ -1,7 +1,10 @@
 package com.photosync.android.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
@@ -21,6 +24,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.ContextCompat
 import com.photosync.android.domain.repository.PhotoSyncRepository
 import com.photosync.android.ui.folder.FolderDetailScreen
 import com.photosync.android.ui.folder.FolderDetailViewModel
@@ -29,8 +33,6 @@ import com.photosync.android.ui.home.HomeViewModel
 import com.photosync.android.ui.settings.SettingsScreen
 import com.photosync.android.ui.settings.SettingsViewModel
 import com.photosync.android.ui.family.FamilyScreen
-import com.photosync.android.ui.share.ShareImportScreen
-import com.photosync.android.ui.share.ShareImportViewModel
 import com.photosync.android.data.FamilyApiClient
 import com.photosync.android.data.GoogleCredentialClient
 import com.photosync.android.data.MediaCleanupManager
@@ -42,7 +44,6 @@ private object PhotoSyncRoute {
     const val folder = "folder"
     const val settings = "settings"
     const val family = "family"
-    const val shareImport = "share-import"
     const val folderIdArg = "folderId"
 
     fun folderPath(folderId: String): String = "$folder/$folderId"
@@ -55,13 +56,18 @@ fun PhotoSyncApp(
     mediaCleanupManager: MediaCleanupManager? = null,
     pendingInviteToken: String? = null,
     onInviteHandled: () -> Unit = {},
-    pendingSharedMedia: List<Uri> = emptyList(),
-    onSharedMediaHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
     var pendingFolderUploadViewModel by remember { mutableStateOf<FolderDetailViewModel?>(null) }
+    var pendingDownload by remember { mutableStateOf<Pair<FolderDetailViewModel, String>?>(null) }
+    val storagePermission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) pendingDownload?.let { (viewModel, photoId) -> viewModel.downloadPhoto(photoId) }
+        pendingDownload = null
+    }
     val mediaPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(50),
     ) { uris: List<Uri> ->
@@ -83,12 +89,6 @@ fun PhotoSyncApp(
     LaunchedEffect(pendingInviteToken) {
         if (pendingInviteToken != null && navController.currentDestination?.route != PhotoSyncRoute.family) {
             navController.navigate(PhotoSyncRoute.family) { launchSingleTop = true }
-        }
-    }
-
-    LaunchedEffect(pendingSharedMedia) {
-        if (pendingSharedMedia.isNotEmpty() && navController.currentDestination?.route != PhotoSyncRoute.shareImport) {
-            navController.navigate(PhotoSyncRoute.shareImport) { launchSingleTop = true }
         }
     }
 
@@ -144,24 +144,6 @@ fun PhotoSyncApp(
             )
         }
 
-        composable(route = PhotoSyncRoute.shareImport) {
-            val viewModel: ShareImportViewModel = viewModel(
-                factory = ShareImportViewModel.Factory(repository),
-            )
-            LaunchedEffect(pendingSharedMedia) {
-                viewModel.setSharedUris(pendingSharedMedia)
-            }
-            val finishShare: () -> Unit = {
-                onSharedMediaHandled()
-                navController.popBackStack()
-            }
-            ShareImportScreen(
-                viewModel = viewModel,
-                onCancel = finishShare,
-                onDone = finishShare,
-            )
-        }
-
         composable(
             route = "${PhotoSyncRoute.folder}/{${PhotoSyncRoute.folderIdArg}}",
             arguments = listOf(
@@ -188,7 +170,16 @@ fun PhotoSyncApp(
                     )
                 },
                 onDeletePhoto = viewModel::deletePhoto,
-                onDownloadPhoto = viewModel::downloadPhoto,
+                onDownloadPhoto = { photoId ->
+                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        pendingDownload = viewModel to photoId
+                        storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    } else {
+                        viewModel.downloadPhoto(photoId)
+                    }
+                },
                 onUpdateCleanupPolicy = viewModel::updateCleanupPolicy,
                 onSaveSharing = viewModel::saveSharing,
                 onRefreshSharing = viewModel::refreshSharing,

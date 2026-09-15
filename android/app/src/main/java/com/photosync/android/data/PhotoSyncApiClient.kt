@@ -15,6 +15,7 @@ import java.io.InputStream
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.OutputStreamWriter
+import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -142,6 +143,21 @@ class PhotoSyncApiClient(
     fun downloadFile(serverFileId: Int, target: File) = downloadToFile("/api/files/$serverFileId/download", target)
 
     fun downloadPreview(serverFileId: Int, target: File) = downloadToFile("/api/files/$serverFileId/preview", target)
+
+    fun downloadFile(serverFileId: Int, output: OutputStream): Long =
+        downloadToStream("/api/files/$serverFileId/download", output)
+
+    private fun downloadToStream(path: String, output: OutputStream): Long {
+        val connection = openConnection(path, "GET")
+        try {
+            check(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
+            val count = connection.inputStream.use { input -> input.copyTo(output, 64 * 1024) }
+            check(connection.contentLengthLong < 0 || count == connection.contentLengthLong) { "Incomplete download" }
+            return count
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     private fun downloadToFile(path: String, target: File) {
         val connection = openConnection(path, "GET")

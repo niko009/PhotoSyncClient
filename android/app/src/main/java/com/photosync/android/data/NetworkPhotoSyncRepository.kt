@@ -1,10 +1,12 @@
 package com.photosync.android.data
 
 import android.content.Context
+import android.content.ContentValues
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.provider.MediaStore
 import android.util.Log
 import com.photosync.android.data.remote.FileItemDto
 import com.photosync.android.domain.model.DashboardStats
@@ -163,11 +165,17 @@ class NetworkPhotoSyncRepository(
                 val accessibleAlbums = apiClient.getAccessibleAlbums()
                 val accessibleById = accessibleAlbums.associateBy { it.albumId }
                 val sharedAlbums = accessibleAlbums.filterNot { it.ownedByMe }
-                var serverAlbums = visibleDevices.flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
-                    .distinctBy { it.id }
+                var currentDeviceAlbums = apiClient.getAlbums(deviceUuid)
+                var serverAlbums = (
+                    currentDeviceAlbums + visibleDevices
+                        .filterNot { it.deviceUuid == deviceUuid }
+                        .flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
+                    ).distinctBy { it.id }
 
-                val knownServerAlbumNames = serverAlbums.map { it.name }.toSet()
-                val missingLocalFolders = localFolders.value.values.filter { it.name !in knownServerAlbumNames }
+                val knownServerAlbumNames = currentDeviceAlbums.map { it.name }.toSet()
+                val missingLocalFolders = localFolders.value.values.filter {
+                    it.remoteAlbumId == null && it.name !in knownServerAlbumNames
+                }
                 var recoveredPendingFolder = false
                 missingLocalFolders.forEach { localFolder ->
                     runCatching {
@@ -180,16 +188,24 @@ class NetworkPhotoSyncRepository(
                     }
                 }
                 if (recoveredPendingFolder) {
-                    serverAlbums = visibleDevices.flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
-                        .distinctBy { it.id }
+                    currentDeviceAlbums = apiClient.getAlbums(deviceUuid)
+                    serverAlbums = (
+                        currentDeviceAlbums + visibleDevices
+                            .filterNot { it.deviceUuid == deviceUuid }
+                            .flatMap { device -> apiClient.getAlbums(device.deviceUuid) }
+                        ).distinctBy { it.id }
                 }
+                val currentDeviceAlbumIds = currentDeviceAlbums.mapTo(mutableSetOf()) { it.id }
 
                 val serverFiles = serverAlbums.associate { album -> album.id to apiClient.getFilesForAlbum(album.id) }
+                val visibleServerAlbumIds = serverAlbums.mapTo(mutableSetOf()) { it.id }
                 val previousDetails = folderDetails.value
                 val details = linkedMapOf<String, FolderDetail>()
                 val summaries = linkedMapOf<String, FolderSummary>()
 
-                localFolders.value.values.forEach { localFolder ->
+                localFolders.value.values
+                    .filter { it.remoteAlbumId == null || it.remoteAlbumId in visibleServerAlbumIds }
+                    .forEach { localFolder ->
                     val previousPhotos = previousDetails[localFolder.id]?.photos.orEmpty()
                     val localCachedPhotos = localPhotos.value[localFolder.id].orEmpty()
                     val mergedPhotos = mergePhotos(
@@ -207,7 +223,8 @@ class NetworkPhotoSyncRepository(
                 serverAlbums.forEach { album ->
                     val matchingLocal = localFolders.value.values.firstOrNull { it.remoteAlbumId == album.id }
                         ?: localFolders.value.values.firstOrNull {
-                            it.remoteAlbumId == null && it.name == album.name && it.id !in matchedLocalIds
+                            album.id in currentDeviceAlbumIds && it.remoteAlbumId == null &&
+                                it.name == album.name && it.id !in matchedLocalIds
                         }
                     matchingLocal?.let { matchedLocalIds.add(it.id) }
                     val folderId = matchingLocal?.id ?: album.id.toString()
@@ -327,18 +344,16 @@ class NetworkPhotoSyncRepository(
                 val photo = localPhotos.value[folderId].orEmpty().firstOrNull { it.id == photoId }
                     ?: folderDetails.value[folderId]?.photos.orEmpty().firstOrNull { it.id == photoId }
                     ?: return@withContext
-                val serverFileId = photo.serverFileId ?: return@withContext
-                val downloadsDir = File(appContext.filesDir, "$cacheNamespace/downloads/$folderId")
-                downloadsDir.mkdirs()
-                val targetFile = File(downloadsDir, "$serverFileId-" + StoragePathResolverSafeName.make(photo.title))
-                apiClient.downloadFile(serverFileId, targetFile)
-                val localUri = Uri.fromFile(targetFile).toString()
-                val thumbnailPath = ensureThumbnailFromFile(folderId, photo.id, targetFile) ?: photo.thumbnailPath
+                if (photo.serverFileId == null) return@withContext
+                if (photo.localUri?.let(Uri::parse)?.let(::localMediaExists) == true) return@withContext
+                val folderName = folderDetails.value[folderId]?.name ?: "PhotoSync"
+                val localUri = publishToMediaStore(photo, folderName) ?: return@withContext
+                val thumbnailPath = ensureThumbnail(folderId, photo.id, localUri) ?: photo.thumbnailPath
                 updateLocalPhoto(
                     folderId,
                     photo.copy(
                         status = PhotoSyncStatus.Synced,
-                        localUri = localUri,
+                        localUri = localUri.toString(),
                         thumbnailPath = thumbnailPath,
                         mimeType = photo.mimeType ?: "image/jpeg",
                     ),
@@ -557,8 +572,7 @@ class NetworkPhotoSyncRepository(
 
     private fun persistLocalPhotos() {
         val payload = JSONArray()
-        val ownedFolderIds = localFolders.value.filterValues { it.ownedByMe }.keys
-        localPhotos.value.filterKeys { it in ownedFolderIds }.forEach { (folderId, photos) ->
+        localPhotos.value.forEach { (folderId, photos) ->
             val photosArray = JSONArray()
             photos.forEach { photo ->
                 photosArray.put(
@@ -702,7 +716,8 @@ class NetworkPhotoSyncRepository(
         folderId: String,
     ): List<PhotoItem> {
         val merged = linkedMapOf<String, PhotoItem>()
-        localPhotos.forEach { photo -> merged[photo.id] = photo }
+        localPhotos.filterNot { it.status == PhotoSyncStatus.RemoteOnly }
+            .forEach { photo -> merged[photo.id] = photo }
         previousPhotos.forEach { photo ->
             if (photo.status != PhotoSyncStatus.RemoteOnly && merged[photo.id] == null) {
                 merged[photo.id] = photo
@@ -711,7 +726,11 @@ class NetworkPhotoSyncRepository(
         serverFiles.forEach { serverFile ->
             val existing = merged.values.firstOrNull { it.serverFileId == serverFile.id }
             if (existing != null) {
+                val validLocalUri = existing.localUri?.let(Uri::parse)?.takeIf(::localMediaExists)
                 merged[existing.id] = existing.copy(
+                    status = if (validLocalUri == null) PhotoSyncStatus.RemoteOnly else existing.status,
+                    localUri = validLocalUri?.toString(),
+                    thumbnailPath = existing.thumbnailPath ?: ensureServerPreview(folderId, serverFile),
                     serverFileId = serverFile.id,
                     serverRelativePath = serverFile.relativePath,
                     mimeType = serverFile.mimeType,
@@ -754,6 +773,48 @@ class NetworkPhotoSyncRepository(
                 mediaCleanupManager.requestDelete(uri)
                 null
             }
+        }
+    }
+
+    private fun localMediaExists(uri: Uri): Boolean = runCatching {
+        appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+    }.getOrDefault(false)
+
+    private fun publishToMediaStore(photo: PhotoItem, folderName: String): Uri? {
+        val mimeType = photo.mimeType ?: guessMimeType(photo.title) ?: "application/octet-stream"
+        val collection = when {
+            mimeType.startsWith("video/") -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            mimeType.startsWith("image/") -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            else -> MediaStore.Files.getContentUri("external")
+        }
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, StoragePathResolverSafeName.make(photo.title))
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val root = if (mimeType.startsWith("video/")) "Movies" else "Pictures"
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "$root/PhotoSync/${StoragePathResolverSafeName.make(folderName)}")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+        val resolver = appContext.contentResolver
+        val uri = resolver.insert(collection, values) ?: error("Android could not create a gallery item.")
+        return try {
+            resolver.openOutputStream(uri, "w")?.use { output ->
+                apiClient.downloadFile(requireNotNull(photo.serverFileId), output)
+            } ?: error("Android could not open the gallery item.")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                resolver.update(
+                    uri,
+                    ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                    null,
+                    null,
+                )
+            }
+            uri
+        } catch (error: Exception) {
+            resolver.delete(uri, null, null)
+            throw error
         }
     }
 

@@ -4,7 +4,9 @@ PhotoSync is a self-hosted, one-way photo and video synchronization system for A
 
 The Android application organizes media into logical folders and uploads it over the local network. The ASP.NET Core server stores the original files in ordinary folders and keeps metadata in SQLite. A successful upload is verified and committed on the server before the client treats the item as synchronized.
 
-> **Status:** 0.6.8-beta under active development. This repository is the canonical source for both the Android client and the server.
+> **Status:** 0.7.0-beta under active development. This repository is the canonical source for both the Android client and the server.
+
+Version 0.7.0-beta adds the signed-in cloud library across a user's devices, clear cloud-only media states, downloads into the Android gallery, and background Gallery → PhotoSync sharing with explicit folder selection for every batch.
 
 Version 0.6.7-beta (`versionCode 6007`) opens Android's photo gallery instead of the document browser and repairs all post-sync cleanup modes. Offline uploads now preserve the original URI and media metadata, temporary queue copies are removed, compression leaves a smaller local image, and original deletion is requested only after a verified upload through Android's system confirmation. It also retains the reliable synchronization, in-app update flow, and privacy-aware SuperAdmin server journal introduced in 0.6.6.
 
@@ -12,7 +14,7 @@ Version 0.6.1-beta fixes empty-album synchronization state and hardens Windows-b
 
 Version 0.6.0-beta adds owner-facing folder access controls. Open one of your own albums and choose whether it stays private, is shared with the whole family, or is shared only with selected active family members. Per-folder permissions support `View` and `Contribute`; existing ACL values are loaded from the server before editing so reopening the dialog does not silently replace an existing selection.
 
-Version 0.5.0-beta added direct Gallery → PhotoSync import: select one or many photos/videos in the normal Android gallery, choose **Share → PhotoSync**, then upload them to an existing PhotoSync folder or create a new folder without leaving the import flow. The source files remain in the phone gallery.
+Gallery → PhotoSync import uses a dedicated folder chooser: select one or many photos/videos, choose **Share → PhotoSync**, explicitly select a writable folder, and return to the gallery as soon as the files are safely queued. WorkManager finishes the upload in the background and reports completion or retry status through a notification.
 
 Version 0.4.0-beta added family sharing with separate Google accounts, secure email-bound invitation links, per-folder permissions, privacy-safe shared-folder discovery, and immutable archive semantics. Committed original photos and videos are never physically deleted by normal PhotoSync UI/API/jobs; archive actions are logical only.
 
@@ -84,8 +86,8 @@ dotnet test server/PhotoSync.Server.slnx
 
 ## Sync and privacy guarantees
 
-- Android is the upload source of truth.
-- Synchronization is one-way: Android to server.
+- Android is the upload source of truth, while signed-in devices can browse the server library.
+- Upload synchronization is Android to server; cloud-only originals are downloaded manually into the Android media library.
 - Committed server originals are never physically deleted by normal product flows.
 - Archive/removal actions only hide or revoke metadata/access; they do not remove original media from disk.
 - Upload completion means the server has verified and committed the file.

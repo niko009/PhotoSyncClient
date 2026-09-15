@@ -2,6 +2,7 @@ package com.photosync.android.data
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import kotlinx.coroutines.flow.first
@@ -13,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [28])
@@ -47,5 +49,20 @@ class OfflineQueueContextTest {
         assertTrue(runCatching { repository.signInWithGoogle("test") }.exceptionOrNull() is IllegalStateException)
         assertTrue(runCatching { repository.signOutFromGoogle() }.exceptionOrNull() is IllegalStateException)
         assertNull(delegate.observeGoogleAccount().first())
+    }
+
+    @Test
+    fun sharedMediaIsCopiedIntoDurableBatchBeforeReturning() = runBlocking {
+        context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .edit().remove("items").commit()
+        val source = File(context.cacheDir, "shared-photo.jpg").apply { writeText("photo") }
+        val repository = OfflineFirstPhotoSyncRepository(context, FakePhotoSyncRepository())
+
+        assertTrue(repository.enqueueSharedMedia("folder-1", listOf(Uri.fromFile(source))))
+
+        val queueJson = context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .getString("items", "").orEmpty()
+        assertTrue(queueJson.contains("share_batch_id"))
+        assertTrue(File(context.filesDir, "offline_queue/folder-1").listFiles().orEmpty().isNotEmpty())
     }
 }

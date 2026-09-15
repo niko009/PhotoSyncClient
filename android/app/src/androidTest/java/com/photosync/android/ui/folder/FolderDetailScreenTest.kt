@@ -31,6 +31,7 @@ class FolderDetailScreenTest {
                                 PhotoItem("2", "IMG_12", PhotoSyncStatus.Pending),
                                 PhotoItem("3", "IMG_13", PhotoSyncStatus.Uploading),
                                 PhotoItem("4", "IMG_14", PhotoSyncStatus.Failed),
+                                PhotoItem("5", "IMG_15", PhotoSyncStatus.RemoteOnly, serverFileId = 15),
                             ),
                         ),
                     ),
@@ -44,7 +45,8 @@ class FolderDetailScreenTest {
         }
 
         composeRule.onNodeWithText("Camera Roll").assertIsDisplayed()
-        composeRule.onAllNodesWithTag("photo_cell").assertCountEquals(4)
-        composeRule.onAllNodesWithTag("photo_status", useUnmergedTree = true).assertCountEquals(4)
+        composeRule.onAllNodesWithTag("photo_cell").assertCountEquals(5)
+        composeRule.onAllNodesWithTag("photo_status", useUnmergedTree = true).assertCountEquals(5)
+        composeRule.onAllNodesWithTag("cloud_badge", useUnmergedTree = true).assertCountEquals(1)
     }
 }

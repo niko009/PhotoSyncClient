@@ -59,10 +59,19 @@ class DeviceNetworkSmokeTest {
         repository.uploadToFolder(folder.id, Uri.fromFile(fixture))
         val photo = repository.observeFolder(folder.id).first()!!.photos.single()
         assertEquals(PhotoSyncStatus.Synced, photo.status)
-        assertArrayEquals(fixture.readBytes(), firstApi.downloadFile(photo.serverFileId!!))
-        repository.downloadPhoto(folder.id, photo.id)
+        val originalBytes = fixture.readBytes()
+        assertArrayEquals(originalBytes, firstApi.downloadFile(photo.serverFileId!!))
+        assertTrue(fixture.delete())
+        repository.refresh()
+        val cloudPhoto = repository.observeFolder(folder.id).first()!!.photos.single()
+        assertEquals(PhotoSyncStatus.RemoteOnly, cloudPhoto.status)
+        repository.downloadPhoto(folder.id, cloudPhoto.id)
         val downloaded = repository.observeFolder(folder.id).first()!!.photos.single()
-        assertArrayEquals(fixture.readBytes(), File(Uri.parse(downloaded.localUri!!).path!!).readBytes())
+        assertTrue(downloaded.localUri!!.startsWith("content:"))
+        assertArrayEquals(
+            originalBytes,
+            firstContext.contentResolver.openInputStream(Uri.parse(downloaded.localUri!!))!!.use { it.readBytes() },
+        )
 
         repository.updateGlobalPhotoCleanupPolicy(PhotoCleanupPolicy.Compress)
         val compressFixture = File(firstContext.filesDir, "compress-photo.png")

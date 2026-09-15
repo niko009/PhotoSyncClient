@@ -22,17 +22,18 @@ class ShareImportViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun successfulBatchReportsEveryUploadedItem() = runTest {
+    fun successfulBatchIsQueuedAfterExplicitFolderSelection() = runTest {
         val viewModel = ShareImportViewModel(FakePhotoSyncRepository())
         advanceUntilIdle()
 
         viewModel.setSharedUris(listOf(Uri.parse("content://gallery/one"), Uri.parse("content://gallery/two")))
-        viewModel.importToSelectedFolder()
+        assertEquals(null, viewModel.state.value.selectedFolderId)
+        viewModel.selectFolder("folder-1")
+        viewModel.enqueueToSelectedFolder()
         advanceUntilIdle()
 
-        assertTrue(viewModel.state.value.isFinished)
-        assertFalse(viewModel.state.value.isUploading)
-        assertEquals(2, viewModel.state.value.processedCount)
+        assertTrue(viewModel.state.value.isQueued)
+        assertFalse(viewModel.state.value.isQueueing)
         assertEquals(null, viewModel.state.value.errorMessage)
     }
 
@@ -42,12 +43,12 @@ class ShareImportViewModelTest {
         advanceUntilIdle()
 
         viewModel.setSharedUris(listOf(Uri.parse("content://gallery/one")))
-        viewModel.importToSelectedFolder()
+        viewModel.selectFolder("folder-1")
+        viewModel.enqueueToSelectedFolder()
         advanceUntilIdle()
 
-        assertFalse(viewModel.state.value.isFinished)
-        assertFalse(viewModel.state.value.isUploading)
-        assertEquals(0, viewModel.state.value.processedCount)
-        assertEquals("Import failed.", viewModel.state.value.errorMessage)
+        assertFalse(viewModel.state.value.isQueued)
+        assertFalse(viewModel.state.value.isQueueing)
+        assertEquals("Could not queue the selected media.", viewModel.state.value.errorMessage)
     }
 }

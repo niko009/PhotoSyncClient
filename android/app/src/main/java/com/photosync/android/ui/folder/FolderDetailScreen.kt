@@ -220,11 +220,27 @@ fun FolderDetailScreen(
                         .testTag("photo_cell")
                         .background(MaterialTheme.colorScheme.surface),
                 ) {
-                    AlbumImage(
-                        item.thumbnailPath ?: item.localUri,
-                        item.title,
-                        Modifier.fillMaxWidth().aspectRatio(1f),
-                    )
+                    Box {
+                        AlbumImage(
+                            item.thumbnailPath ?: item.localUri,
+                            item.title,
+                            Modifier.fillMaxWidth().aspectRatio(1f),
+                        )
+                        if (item.status == PhotoSyncStatus.RemoteOnly) {
+                            Surface(
+                                Modifier.align(Alignment.TopEnd).padding(6.dp).testTag("cloud_badge"),
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ) {
+                                Text(
+                                    "☁ ${stringResource(R.string.cloud_only_badge)}",
+                                    Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                    }
                     Text(
                         item.status.statusText(),
                         Modifier.padding(10.dp).testTag("photo_status"),
@@ -447,7 +463,7 @@ fun FolderDetailScreen(
                             if (photo.localUri == null) {
                                 Text(stringResource(R.string.album_preview_hint), style = MaterialTheme.typography.bodySmall)
                             }
-                            if (photo.serverFileId != null) {
+                            if (photo.serverFileId != null && photo.localUri == null) {
                                 Button(onClick = { onDownloadPhoto(photo.id) }, modifier = Modifier.fillMaxWidth()) {
                                     Text(stringResource(R.string.album_download_original))
                                 }
