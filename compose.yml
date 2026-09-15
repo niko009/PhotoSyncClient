@@ -15,6 +15,7 @@ services:
       ConnectionStrings__PhotoSync: Data Source=/data/system/photosync.db
       PhotoSync__MaxStorageBytes: "10737418240"
       PhotoSync__MaxFileBytes: "26214400"
+      PhotoSync__MaxDevices: "500"
       # This hosted beta accepts new phones. Registration is rate-limited and
       # capped by the server's configured device limit.
       PhotoSync__AllowDeviceEnrollment: "true"

@@ -146,6 +146,8 @@ public sealed class PortalTests
 
         var admin = await ownerPortal.GetFromJsonAsync<JsonElement>("/api/portal/admin/dashboard");
         Assert.Equal(2, admin.GetProperty("deviceCount").GetInt32());
+        Assert.Equal(5, admin.GetProperty("server").GetProperty("maxDevices").GetInt32());
+        Assert.True(admin.GetProperty("server").GetProperty("allowDeviceRegistration").GetBoolean());
         Assert.Contains(admin.GetProperty("devices").EnumerateArray(), x => x.GetProperty("id").GetInt32() == ownerDevice);
     }
 

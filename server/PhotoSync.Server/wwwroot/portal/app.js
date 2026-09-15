@@ -31,6 +31,7 @@ async function loadAdmin() {
   stats($('admin-stats'),[['Устройств',data.deviceCount],['Файлов',data.fileCount],['В хранилище',bytes(data.bytesTotal)]]);
   $('server-name').textContent=data.server.name;
   $('server-state').textContent='База данных: '+(data.server.database?'доступна':'ошибка')+' · Протокол '+data.server.protocolVersion+' · Свободно на диске: '+(data.server.freeBytes===null?'нет данных':bytes(data.server.freeBytes));
+  $('device-limit-state').textContent='До '+data.server.maxDevices+' устройств · регистрация '+(data.server.allowDeviceRegistration?'открыта':'закрыта')+' · последнее обращение, не онлайн-статус';
   $('all-devices').replaceChildren(...data.devices.map(d=>{const card=element('article','','device');card.append(element('h3',d.name),element('p',d.uuid),element('p',d.fileCount+' файлов · '+bytes(d.bytes)),element('p','Последнее обращение: '+date(d.lastSeenAt)),element('p',d.ownerId?'Назначено аккаунту':'Без аккаунта'));return card;}));
   if(!data.devices.length)empty($('all-devices'),'Телефоны ещё не подключались.');
   const isOwner=me.roles.includes('SuperAdmin');$('owner-controls').hidden=!isOwner;
