@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +43,38 @@ fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: 
                     Text(stringResource(R.string.album_device_access_body))
                     Text(stringResource(R.string.album_reset_warning), color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            item {
+                AlbumPanel {
+                    Text(stringResource(R.string.device_identifiers), style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        stringResource(R.string.device_identifiers_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SelectionContainer {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                stringResource(R.string.device_name_format, state.deviceIdentifiers.deviceName),
+                                modifier = Modifier.testTag("device_name"),
+                            )
+                            Text(
+                                stringResource(R.string.device_uuid_format, state.deviceIdentifiers.deviceUuid),
+                                modifier = Modifier.testTag("device_uuid"),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                stringResource(
+                                    R.string.server_device_id_format,
+                                    state.deviceIdentifiers.serverDeviceId?.toString()
+                                        ?: stringResource(R.string.server_device_id_pending),
+                                ),
+                                modifier = Modifier.testTag("server_device_id"),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                 }
             }
             item {

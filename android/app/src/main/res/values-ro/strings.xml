@@ -7,6 +7,12 @@
     <string name="cancel">Anuleaza</string>
     <string name="done">Gata</string>
     <string name="settings">Setari</string>
+    <string name="device_identifiers">Identificatorii dispozitivului</string>
+    <string name="device_identifiers_help">Foloseste aceste valori pentru a gasi telefonul in jurnalele serverului. Tine apasat pentru a copia un identificator. Secretul de autorizare nu este afisat.</string>
+    <string name="device_name_format">Dispozitiv: %1$s</string>
+    <string name="device_uuid_format">UUID dispozitiv: %1$s</string>
+    <string name="server_device_id_format">ID dispozitiv pe server: %1$s</string>
+    <string name="server_device_id_pending">disponibil dupa conectare</string>
     <string name="upload_queue">Coada de incarcare</string>
     <string name="auto_sync_enabled">Sincronizarea automata este activata</string>
     <string name="refresh">Actualizeaza</string>

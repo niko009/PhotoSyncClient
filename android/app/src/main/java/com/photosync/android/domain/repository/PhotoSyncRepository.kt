@@ -2,6 +2,7 @@ package com.photosync.android.domain.repository
 
 import android.net.Uri
 import com.photosync.android.domain.model.DashboardStats
+import com.photosync.android.domain.model.DeviceIdentifiers
 import com.photosync.android.domain.model.FolderDetail
 import com.photosync.android.domain.model.PhotoCleanupPolicy
 import com.photosync.android.domain.model.FolderSummary
@@ -15,6 +16,7 @@ interface PhotoSyncRepository {
     fun observeStats(): Flow<DashboardStats>
     fun observeFolders(): Flow<List<FolderSummary>>
     fun observeGoogleAccount(): Flow<GoogleAccount?>
+    fun observeDeviceIdentifiers(): Flow<DeviceIdentifiers>
     fun observeFolder(folderId: String): Flow<FolderDetail?>
     suspend fun refresh()
     suspend fun updateServerUrl(serverUrl: String)

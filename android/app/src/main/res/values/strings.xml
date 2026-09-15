@@ -7,6 +7,12 @@
     <string name="cancel">Cancel</string>
     <string name="done">Done</string>
     <string name="settings">Settings</string>
+    <string name="device_identifiers">Device identifiers</string>
+    <string name="device_identifiers_help">Use these values to find this phone in server logs. Touch and hold to copy an identifier. The authorization secret is never shown.</string>
+    <string name="device_name_format">Device: %1$s</string>
+    <string name="device_uuid_format">Device UUID: %1$s</string>
+    <string name="server_device_id_format">Server device ID: %1$s</string>
+    <string name="server_device_id_pending">available after connection</string>
     <string name="upload_queue">Upload Queue</string>
     <string name="auto_sync_enabled">Auto sync is enabled</string>
     <string name="refresh">Refresh</string>

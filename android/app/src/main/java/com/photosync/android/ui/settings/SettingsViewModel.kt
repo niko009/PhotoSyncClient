@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.photosync.android.domain.model.PhotoCleanupPolicy
+import com.photosync.android.domain.model.DeviceIdentifiers
 import com.photosync.android.domain.model.GoogleAccount
 import com.photosync.android.domain.repository.PhotoSyncRepository
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,6 +19,7 @@ data class SettingsUiState(
     val globalPolicy: PhotoCleanupPolicy = PhotoCleanupPolicy.Keep,
     val stats: com.photosync.android.domain.model.DashboardStats = com.photosync.android.domain.model.DashboardStats(),
     val googleAccount: GoogleAccount? = null,
+    val deviceIdentifiers: DeviceIdentifiers = DeviceIdentifiers(),
     val googleBusy: Boolean = false,
     val googleError: Boolean = false,
     val actionError: String? = null,
@@ -34,12 +36,14 @@ class SettingsViewModel(
         repository.observeGlobalPhotoCleanupPolicy(),
         repository.observeStats(),
         repository.observeGoogleAccount(),
-    ) { serverUrl, globalPolicy, stats, googleAccount ->
+        repository.observeDeviceIdentifiers(),
+    ) { serverUrl, globalPolicy, stats, googleAccount, deviceIdentifiers ->
         SettingsUiState(
             serverUrl = serverUrl,
             globalPolicy = globalPolicy,
             stats = stats,
             googleAccount = googleAccount,
+            deviceIdentifiers = deviceIdentifiers,
         )
     }
     val state: StateFlow<SettingsUiState> = combine(baseState, googleBusy, googleError, actionError) { base, busy, error, action ->

@@ -2,6 +2,7 @@ package com.photosync.android.data
 
 import android.net.Uri
 import com.photosync.android.domain.model.DashboardStats
+import com.photosync.android.domain.model.DeviceIdentifiers
 import com.photosync.android.domain.model.FolderDetail
 import com.photosync.android.domain.model.FolderSummary
 import com.photosync.android.domain.model.GoogleAccount
@@ -17,6 +18,11 @@ import kotlinx.coroutines.flow.update
 class FakePhotoSyncRepository(
     seedFolders: List<FolderRecord> = sampleFolders(),
     private val uploadSucceeds: Boolean = true,
+    seedDeviceIdentifiers: DeviceIdentifiers = DeviceIdentifiers(
+        deviceUuid = "test-device-uuid",
+        serverDeviceId = 42,
+        deviceName = "Test Phone",
+    ),
 ) : PhotoSyncRepository {
 
     private val folders = MutableStateFlow(seedFolders)
@@ -24,6 +30,7 @@ class FakePhotoSyncRepository(
     private val globalPolicy = MutableStateFlow(PhotoCleanupPolicy.Keep)
     private val folderPolicies = MutableStateFlow<Map<String, PhotoCleanupPolicy>>(emptyMap())
     private val googleAccount = MutableStateFlow<GoogleAccount?>(null)
+    private val deviceIdentifiers = MutableStateFlow(seedDeviceIdentifiers)
 
     override fun observeGlobalPhotoCleanupPolicy(): Flow<PhotoCleanupPolicy> = globalPolicy
     override fun observeFolderPhotoCleanupPolicy(folderId: String): Flow<PhotoCleanupPolicy?> =
@@ -40,6 +47,7 @@ class FakePhotoSyncRepository(
 
     override fun observeServerUrl(): Flow<String> = serverUrl
     override fun observeGoogleAccount(): Flow<GoogleAccount?> = googleAccount
+    override fun observeDeviceIdentifiers(): Flow<DeviceIdentifiers> = deviceIdentifiers
     override suspend fun signInWithGoogle(idToken: String) {
         googleAccount.value = GoogleAccount("family@example.test", "Family User", 1)
     }

@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.util.Log
 import com.photosync.android.data.remote.FileItemDto
 import com.photosync.android.domain.model.DashboardStats
+import com.photosync.android.domain.model.DeviceIdentifiers
 import com.photosync.android.domain.model.FolderDetail
 import com.photosync.android.domain.model.FolderSummary
 import com.photosync.android.domain.model.GoogleAccount
@@ -58,8 +59,11 @@ class NetworkPhotoSyncRepository(
     private val folderPolicies = MutableStateFlow(loadFolderPolicies())
     private val serverUrl = MutableStateFlow(apiClient.currentBaseUrl())
     private val googleAccount = MutableStateFlow<GoogleAccount?>(null)
-    private val deviceUuid: String get() = apiClient.deviceUuid()
     private val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
+    private val deviceIdentifiers = MutableStateFlow(
+        DeviceIdentifiers(deviceUuid = apiClient.deviceUuid(), deviceName = deviceName),
+    )
+    private val deviceUuid: String get() = apiClient.deviceUuid()
 
     init {
         restoreLocalState()
@@ -105,6 +109,7 @@ class NetworkPhotoSyncRepository(
 
     override fun observeFolders(): Flow<List<FolderSummary>> = folders.asStateFlow()
     override fun observeGoogleAccount(): Flow<GoogleAccount?> = googleAccount.asStateFlow()
+    override fun observeDeviceIdentifiers(): Flow<DeviceIdentifiers> = deviceIdentifiers.asStateFlow()
 
     override fun observeFolder(folderId: String): Flow<FolderDetail?> = folderDetails.asStateFlow().map { details ->
         details[folderId]
@@ -134,11 +139,7 @@ class NetworkPhotoSyncRepository(
                 upsertLocalFolder(localSummary, localDetail)
 
                 runCatching {
-                    apiClient.registerDevice(
-                        deviceUuid = deviceUuid,
-                        deviceName = deviceName,
-                        appVersion = APP_VERSION,
-                    )
+                    registerCurrentDevice()
                     apiClient.createAlbum(deviceUuid = deviceUuid, albumName = normalized)
                 }.onFailure { error ->
                     Log.e(TAG, "Server folder creation failed for $normalized", error)
@@ -154,11 +155,7 @@ class NetworkPhotoSyncRepository(
         stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Connecting)
         runCatching {
             withContext(Dispatchers.IO) {
-                apiClient.registerDevice(
-                    deviceUuid = deviceUuid,
-                    deviceName = deviceName,
-                    appVersion = APP_VERSION,
-                )
+                registerCurrentDevice()
                 googleAccount.value = apiClient.googleAccount()
                 val summary = apiClient.getSummary()
                 val visibleDevices = apiClient.getDevices()
@@ -307,6 +304,10 @@ class NetworkPhotoSyncRepository(
                 apiClient.updateBaseUrl(normalized)
                 preferencesStore.updateServerUrl(normalized)
                 this@NetworkPhotoSyncRepository.serverUrl.value = apiClient.currentBaseUrl()
+                deviceIdentifiers.value = DeviceIdentifiers(
+                    deviceUuid = deviceUuid,
+                    deviceName = deviceName,
+                )
                 googleAccount.value = null
                 localFolders.value = loadLocalFolders()
                 localPhotos.value = loadLocalPhotos()
@@ -405,11 +406,7 @@ class NetworkPhotoSyncRepository(
                 updateLocalPhoto(folderId, PhotoItem(tempPhotoId, originalName, PhotoSyncStatus.Uploading, sourceUri.toString(), thumbnailPath))
                 restoreLocalState()
 
-                apiClient.registerDevice(
-                    deviceUuid = deviceUuid,
-                    deviceName = deviceName,
-                    appVersion = APP_VERSION,
-                )
+                registerCurrentDevice()
                 val uploadResult = if (folder.remoteAlbumId != null) {
                     apiClient.uploadFileToAlbum(
                         albumId = folder.remoteAlbumId,
@@ -470,6 +467,18 @@ class NetworkPhotoSyncRepository(
         private const val KEY_LOCAL_PHOTOS = "local_photos"
         private const val KEY_FOLDER_POLICIES = "folder_policies"
         private const val APP_VERSION = com.photosync.android.BuildConfig.VERSION_NAME
+    }
+
+    private fun registerCurrentDevice() = apiClient.registerDevice(
+        deviceUuid = deviceUuid,
+        deviceName = deviceName,
+        appVersion = APP_VERSION,
+    ).also { registration ->
+        deviceIdentifiers.value = DeviceIdentifiers(
+            deviceUuid = deviceUuid,
+            serverDeviceId = registration.deviceId,
+            deviceName = deviceName,
+        )
     }
 
     private fun loadLocalFolders(): Map<String, FolderDetail> {

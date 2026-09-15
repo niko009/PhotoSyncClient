@@ -7,6 +7,12 @@
     <string name="cancel">Отмена</string>
     <string name="done">Готово</string>
     <string name="settings">Настройки</string>
+    <string name="device_identifiers">Идентификаторы устройства</string>
+    <string name="device_identifiers_help">Используйте эти значения, чтобы найти телефон в логах сервера. Нажмите и удерживайте идентификатор, чтобы скопировать. Секрет авторизации не отображается.</string>
+    <string name="device_name_format">Устройство: %1$s</string>
+    <string name="device_uuid_format">UUID устройства: %1$s</string>
+    <string name="server_device_id_format">ID устройства на сервере: %1$s</string>
+    <string name="server_device_id_pending">появится после подключения</string>
     <string name="upload_queue">Очередь загрузки</string>
     <string name="auto_sync_enabled">Автосинхронизация включена</string>
     <string name="refresh">Обновить</string>
