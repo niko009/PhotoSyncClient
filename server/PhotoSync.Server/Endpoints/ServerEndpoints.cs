@@ -30,7 +30,7 @@ public static class ServerEndpoints
         {
             device_auth = true,
             google_auth = !string.IsNullOrWhiteSpace(google.Value.ClientId),
-            family_sharing = false,
+            family_sharing = true,
             protocol_version = 2
         })).AllowAnonymous();
 

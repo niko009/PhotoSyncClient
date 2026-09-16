@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PhotoSync.Server.Contracts;
@@ -27,6 +28,17 @@ public sealed class ApiTests
         Assert.Equal("Test PhotoSync", payload.ServerName);
         Assert.Equal("ok", payload.Status);
         Assert.Equal("", payload.StorageRoot);
+    }
+
+    [Fact]
+    public async Task CapabilitiesAdvertiseImplementedFamilySharing()
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        using var client = factory.CreateClient();
+
+        var payload = await client.GetFromJsonAsync<JsonElement>("/api/server/capabilities");
+
+        Assert.True(payload.GetProperty("family_sharing").GetBoolean());
     }
 
     [Fact]
