@@ -76,6 +76,7 @@
     <string name="share_import_queue">Upload in background</string>
     <string name="share_import_background_hint">Choose a folder. PhotoSync will return you to the gallery and upload in the background.</string>
     <string name="share_import_no_available_folders">No writable folders are available. Open PhotoSync to create a folder or check your access.</string>
+    <string name="share_import_no_available_folders_create_here">No writable folders yet. Create one above or check your access.</string>
     <string name="cloud_only_badge">Cloud only</string>
     <string name="share_notification_channel">Shared media uploads</string>
     <string name="share_notification_uploading">Uploading to PhotoSync</string>

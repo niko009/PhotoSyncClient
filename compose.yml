@@ -10,6 +10,9 @@ services:
       # Media files live on the Windows-backed VirtualBox shared folder.
       # The host path /mnt/server is bind-mounted to /storage below.
       PhotoSync__StorageRoot: /storage
+      # Files uploaded before the Windows-backed mount was introduced remain
+      # readable from the persistent Docker volume.
+      PhotoSync__LegacyStorageRoot: /data
       # Keep SQLite on the native Docker volume rather than the shared folder.
       PhotoSync__DatabasePath: /data/system/photosync.db
       ConnectionStrings__PhotoSync: Data Source=/data/system/photosync.db

@@ -182,9 +182,19 @@ class OfflineFirstPhotoSyncRepository(
         if (hasNetwork()) syncQueuedUploadsOnce()
     }
 
-    override suspend fun signInWithGoogle(idToken: String) = queueMutex.withLock {
-        check(queue.value.isEmpty()) { "Finish or remove pending uploads before changing the account." }
-        delegate.signInWithGoogle(idToken)
+    override suspend fun signInWithGoogle(idToken: String) {
+        queueMutex.withLock {
+            // A fresh installation commonly has uploads queued before the user
+            // connects Google. Linking that anonymous device is safe: the server
+            // attributes its existing albums/files to the verified account.
+            // Keep blocking an account change while another account owns the queue.
+            val currentAccount = delegate.observeGoogleAccount().first()
+            check(queue.value.isEmpty() || currentAccount == null) {
+                "Finish or remove pending uploads before changing the account."
+            }
+            delegate.signInWithGoogle(idToken)
+        }
+        if (hasNetwork()) syncQueuedUploadsOnce()
     }
 
     override suspend fun signOutFromGoogle() = queueMutex.withLock {

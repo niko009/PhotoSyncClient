@@ -76,6 +76,7 @@
     <string name="share_import_queue">Incarca in fundal</string>
     <string name="share_import_background_hint">Alege un dosar. PhotoSync te va intoarce in galerie si va incarca in fundal.</string>
     <string name="share_import_no_available_folders">Nu exista dosare in care poti incarca. Deschide PhotoSync pentru a crea un dosar sau a verifica accesul.</string>
+    <string name="share_import_no_available_folders_create_here">Nu exista dosare in care poti incarca. Creeaza unul mai sus sau verifica accesul.</string>
     <string name="cloud_only_badge">Doar in cloud</string>
     <string name="share_notification_channel">Incarcari din galerie</string>
     <string name="share_notification_uploading">Se incarca in PhotoSync</string>

@@ -87,6 +87,40 @@ fun ShareImportScreen(
                 }
             }
 
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.share_import_new_folder), style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = state.newFolderName,
+                            onValueChange = viewModel::updateNewFolderName,
+                            modifier = Modifier.weight(1f).testTag("share_new_folder_name"),
+                            enabled = !state.isQueueing && !state.isCreatingFolder,
+                            singleLine = true,
+                            label = { Text(stringResource(R.string.folder_name)) },
+                        )
+                        Button(
+                            onClick = viewModel::createFolder,
+                            enabled = state.newFolderName.isNotBlank() && !state.isQueueing && !state.isCreatingFolder,
+                            modifier = Modifier.testTag("share_create_folder"),
+                        ) {
+                            if (state.isCreatingFolder) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Text(stringResource(R.string.create))
+                            }
+                        }
+                    }
+                }
+            }
+
             if (state.isLoadingFolders) {
                 item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             } else if (state.folders.isEmpty()) {
@@ -96,7 +130,7 @@ fun ShareImportScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     ) {
                         Text(
-                            stringResource(R.string.share_import_no_available_folders),
+                            stringResource(R.string.share_import_no_available_folders_create_here),
                             Modifier.padding(18.dp),
                             style = MaterialTheme.typography.titleMedium,
                         )

@@ -76,6 +76,7 @@
     <string name="share_import_queue">Загрузить в фоне</string>
     <string name="share_import_background_hint">Выберите папку. PhotoSync вернёт вас в галерею и продолжит загрузку в фоне.</string>
     <string name="share_import_no_available_folders">Нет доступных для загрузки папок. Откройте PhotoSync, чтобы создать папку или проверить доступ.</string>
+    <string name="share_import_no_available_folders_create_here">Нет доступных для загрузки папок. Создайте папку выше или проверьте доступ.</string>
     <string name="cloud_only_badge">Только в облаке</string>
     <string name="share_notification_channel">Загрузка из галереи</string>
     <string name="share_notification_uploading">Загрузка в PhotoSync</string>

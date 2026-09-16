@@ -6,7 +6,7 @@ The Android application organizes media into logical folders and uploads it over
 
 > **Status:** 0.7.1-beta under active development. This repository is the canonical source for both the Android client and the server.
 
-Version 0.7.1-beta adds device identifiers to Settings for direct server-log correlation and enables rate-limited new-phone enrollment on the hosted beta deployment.
+Version 0.7.2-beta adds album creation directly to Gallery share import, fixes first-time Google linking while uploads are queued, and restores access to originals stored before the server storage migration.
 
 Version 0.7.0-beta adds the signed-in cloud library across a user's devices, clear cloud-only media states, downloads into the Android gallery, and background Gallery → PhotoSync sharing with explicit folder selection for every batch.
 

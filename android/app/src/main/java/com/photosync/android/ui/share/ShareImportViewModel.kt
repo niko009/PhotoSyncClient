@@ -9,8 +9,10 @@ import com.photosync.android.domain.repository.PhotoSyncRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class ShareImportUiState(
     val folders: List<FolderSummary> = emptyList(),
@@ -18,6 +20,8 @@ data class ShareImportUiState(
     val selectedFolderId: String? = null,
     val isLoadingFolders: Boolean = true,
     val isQueueing: Boolean = false,
+    val newFolderName: String = "",
+    val isCreatingFolder: Boolean = false,
     val isQueued: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -102,6 +106,48 @@ class ShareImportViewModel(
                         )
                     }
                 }
+        }
+    }
+
+    fun updateNewFolderName(name: String) {
+        if (_state.value.isQueueing || _state.value.isCreatingFolder) return
+        _state.update { it.copy(newFolderName = name, errorMessage = null) }
+    }
+
+    fun createFolder() {
+        val name = _state.value.newFolderName.trim()
+        if (name.isBlank()) {
+            _state.update { it.copy(errorMessage = "Enter a folder name.") }
+            return
+        }
+        if (_state.value.isQueueing || _state.value.isCreatingFolder) return
+        viewModelScope.launch {
+            _state.update { it.copy(isCreatingFolder = true, errorMessage = null) }
+            runCatching {
+                val existingIds = _state.value.folders.mapTo(mutableSetOf()) { it.id }
+                repository.addFolder(name)
+                withTimeoutOrNull(5_000) {
+                    repository.observeFolders().first { folders ->
+                        folders.any { it.canContribute && it.name == name && it.id !in existingIds }
+                    }
+                }?.lastOrNull { it.canContribute && it.name == name && it.id !in existingIds }
+                    ?: error("Could not create the folder.")
+            }.onSuccess { folder ->
+                _state.update {
+                    it.copy(
+                        selectedFolderId = folder.id,
+                        newFolderName = "",
+                        isCreatingFolder = false,
+                    )
+                }
+            }.onFailure { error ->
+                _state.update {
+                    it.copy(
+                        isCreatingFolder = false,
+                        errorMessage = error.message ?: "Could not create the folder.",
+                    )
+                }
+            }
         }
     }
 

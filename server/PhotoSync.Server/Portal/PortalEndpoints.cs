@@ -175,7 +175,7 @@ public static class PortalEndpoints
             var ids = await portalDb.DeviceOwners.Where(x => x.UserId == userId).Select(x => x.DeviceId).ToListAsync();
             var file = await media.Files.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && ids.Contains(x.DeviceId));
             if (file is null) return Results.NotFound();
-            var path = paths.ToAbsolutePath(file.RelativePath);
+            var path = paths.ToExistingAbsolutePath(file.RelativePath);
             return File.Exists(path) ? Results.File(path, "application/octet-stream", file.OriginalName) : Results.NotFound();
         });
 

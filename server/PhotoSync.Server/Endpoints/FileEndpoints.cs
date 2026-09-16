@@ -166,7 +166,7 @@ public static class FileEndpoints
     {
         var file = await AuthorizedFileAsync(fileId, db, access, ct);
         if (file is null) return Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."));
-        var path = pathResolver.ToAbsolutePath(file.RelativePath);
+        var path = pathResolver.ToExistingAbsolutePath(file.RelativePath);
         return !System.IO.File.Exists(path)
             ? Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."))
             : Results.File(path, file.MimeType, enableRangeProcessing: true);
@@ -177,7 +177,7 @@ public static class FileEndpoints
     {
         var file = await AuthorizedFileAsync(fileId, db, access, ct);
         if (file is null) return Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."));
-        var path = pathResolver.ToAbsolutePath(file.RelativePath);
+        var path = pathResolver.ToExistingAbsolutePath(file.RelativePath);
         return !System.IO.File.Exists(path)
             ? Results.NotFound(ApiProblems.NotFound("FILE_NOT_FOUND", "File was not found."))
             : Results.File(path, file.MimeType, file.OriginalName, enableRangeProcessing: true);

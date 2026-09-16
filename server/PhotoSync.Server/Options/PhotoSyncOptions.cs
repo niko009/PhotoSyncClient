@@ -10,6 +10,10 @@ public sealed class PhotoSyncOptions
 
     public string StorageRoot { get; set; } = "data";
 
+    // Optional read-only compatibility root for files written before storage
+    // was moved to a different mount. New uploads always use StorageRoot.
+    public string? LegacyStorageRoot { get; set; }
+
     public string TempRoot { get; set; } = Path.Combine("data", "temp");
 
     public string PreviewRoot { get; set; } = Path.Combine("data", "previews");

@@ -6,7 +6,7 @@ namespace PhotoSync.Server.Services;
 public static class StoredFileIntegrity
 {
     public static Task<bool> VerifyAsync(StoredFileEntity file, StoragePathResolver paths, CancellationToken ct) =>
-        VerifyAsync(paths.ToAbsolutePath(file.RelativePath), file.SizeBytes, file.Sha256, ct);
+        VerifyAsync(paths.ToExistingAbsolutePath(file.RelativePath), file.SizeBytes, file.Sha256, ct);
 
     public static async Task<bool> VerifyAsync(string path, long size, string hash, CancellationToken ct)
     {

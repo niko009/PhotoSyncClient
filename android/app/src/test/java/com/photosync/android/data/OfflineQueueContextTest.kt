@@ -43,12 +43,21 @@ class OfflineQueueContextTest {
     }
 
     @Test
-    fun accountCannotChangeWhileAnUploadIsPending() = runBlocking {
+    fun freshDeviceCanLinkAccountWhileAnUploadIsPending() = runBlocking {
         val delegate = FakePhotoSyncRepository()
         val repository = OfflineFirstPhotoSyncRepository(context, delegate)
-        assertTrue(runCatching { repository.signInWithGoogle("test") }.exceptionOrNull() is IllegalStateException)
-        assertTrue(runCatching { repository.signOutFromGoogle() }.exceptionOrNull() is IllegalStateException)
-        assertNull(delegate.observeGoogleAccount().first())
+
+        repository.signInWithGoogle("test")
+
+        assertNotNull(delegate.observeGoogleAccount().first())
+    }
+
+    @Test
+    fun linkedAccountCannotChangeWhileAnUploadIsPending() = runBlocking {
+        val delegate = FakePhotoSyncRepository().also { it.signInWithGoogle("existing") }
+        val repository = OfflineFirstPhotoSyncRepository(context, delegate)
+
+        assertTrue(runCatching { repository.signInWithGoogle("different") }.exceptionOrNull() is IllegalStateException)
     }
 
     @Test

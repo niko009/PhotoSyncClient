@@ -51,4 +51,19 @@ class ShareImportViewModelTest {
         assertFalse(viewModel.state.value.isQueueing)
         assertEquals("Could not queue the selected media.", viewModel.state.value.errorMessage)
     }
+
+    @Test
+    fun newFolderCanBeCreatedAndIsSelectedForThisShare() = runTest {
+        val viewModel = ShareImportViewModel(FakePhotoSyncRepository())
+        advanceUntilIdle()
+
+        viewModel.updateNewFolderName("Redmi trip")
+        viewModel.createFolder()
+        advanceUntilIdle()
+
+        val created = viewModel.state.value.folders.single { it.name == "Redmi trip" }
+        assertEquals(created.id, viewModel.state.value.selectedFolderId)
+        assertEquals("", viewModel.state.value.newFolderName)
+        assertFalse(viewModel.state.value.isCreatingFolder)
+    }
 }

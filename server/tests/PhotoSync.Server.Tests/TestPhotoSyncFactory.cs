@@ -42,6 +42,7 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
                 ["PhotoSync:DatabasePath"] = DatabasePath,
                 ["PhotoSync:ServerName"] = "Test PhotoSync",
                 ["PhotoSync:AllowDeviceEnrollment"] = "true",
+                ["PhotoSync:MinFreeDiskBytes"] = "0",
                 ["PhotoSync:RequestLogging:Directory"] = Path.Combine(_rootPath, "logs")
             };
 
@@ -61,9 +62,18 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
     public new async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
-        if (Directory.Exists(_rootPath))
+        for (var attempt = 0; attempt < 5 && Directory.Exists(_rootPath); attempt++)
         {
-            Directory.Delete(_rootPath, recursive: true);
+            try
+            {
+                Directory.Delete(_rootPath, recursive: true);
+            }
+            catch (IOException) when (attempt < 4)
+            {
+                // The request-log stream can take a moment to release its file
+                // handle after the in-memory host has stopped on Windows.
+                await Task.Delay(100 * (attempt + 1));
+            }
         }
     }
 }

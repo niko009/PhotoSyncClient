@@ -8,6 +8,9 @@ namespace PhotoSync.Server.Services;
 public sealed class StoragePathResolver(IOptions<PhotoSyncOptions> options)
 {
     private readonly string _storageRoot = Path.GetFullPath(options.Value.StorageRoot);
+    private readonly string? _legacyStorageRoot = string.IsNullOrWhiteSpace(options.Value.LegacyStorageRoot)
+        ? null
+        : Path.GetFullPath(options.Value.LegacyStorageRoot);
 
     public string StorageRoot => _storageRoot;
 
@@ -29,9 +32,19 @@ public sealed class StoragePathResolver(IOptions<PhotoSyncOptions> options)
     }
 
     public string ToAbsolutePath(string relativePath)
+        => ToAbsolutePath(_storageRoot, relativePath);
+
+    public string ToExistingAbsolutePath(string relativePath)
     {
-        var fullPath = Path.GetFullPath(Path.Combine(_storageRoot, relativePath));
-        var rootPrefix = _storageRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var current = ToAbsolutePath(relativePath);
+        if (File.Exists(current) || _legacyStorageRoot is null) return current;
+        return ToAbsolutePath(_legacyStorageRoot, relativePath);
+    }
+
+    private static string ToAbsolutePath(string root, string relativePath)
+    {
+        var fullPath = Path.GetFullPath(Path.Combine(root, relativePath));
+        var rootPrefix = root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         if (!fullPath.StartsWith(rootPrefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new InvalidOperationException("Storage path is outside the configured root.");
         return fullPath;
