@@ -27,7 +27,7 @@
       "publicOutput": true,
       "steps": [
         {
-          "name": "build-sign-verify-publish-0.7.2",
+          "name": "build-sign-verify-publish-072",
           "command": "node",
           "args": ["scripts/publish-0.6.2.mjs"],
           "timeoutSeconds": 1800
@@ -38,7 +38,7 @@
       "publicOutput": true,
       "steps": [
         {
-          "name": "build-sign-verify-publish-0.7.2",
+          "name": "build-sign-verify-publish-072",
           "command": "node",
           "args": ["scripts/publish-0.6.2.mjs"],
           "timeoutSeconds": 1800
