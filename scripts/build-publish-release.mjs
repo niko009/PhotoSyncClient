@@ -142,8 +142,8 @@ function updateProjectMetadata(bacusRepo, apkHash, apkSize) {
   if (!project) fail('PhotoSync project metadata not found in bacus.dev');
   const fileName = `photosync-android-${VERSION}.apk`;
   const url = `/downloads/photosync/${fileName}`;
-  project.descriptionEn = `PhotoSync ${VERSION} fixes empty-album synchronization state and storage-backed folder creation while keeping Gallery share import and per-folder family View/Contribute controls. The Android client uses the permanent Bacus Lab release certificate and updates existing release-signed installations in place.`;
-  project.descriptionRu = `PhotoSync ${VERSION} исправляет статус синхронизации пустых альбомов и создание физических папок в серверном хранилище, сохраняя импорт через «Поделиться» и семейный доступ View/Contribute для каждой папки. Android-клиент подписан постоянным release-сертификатом Bacus Lab и обновляет существующие release-версии поверх установленного приложения.`;
+  project.descriptionEn = `PhotoSync ${VERSION} lets users create an album directly while sharing photos from Android Gallery. It also fixes first-time Google account linking with queued uploads and restores cloud access to originals kept in the server's legacy storage volume.`;
+  project.descriptionRu = `PhotoSync ${VERSION} позволяет создать альбом прямо при отправке фотографий из галереи Android. Также исправлены первая привязка Google-аккаунта при наличии очереди и облачный доступ к оригиналам в прежнем серверном хранилище.`;
   project.downloads.android = {
     url,
     version: VERSION,
@@ -161,9 +161,9 @@ function updateProjectDoc(bacusRepo, apkHash, apkSize, fileName) {
   doc = doc.replace(/Public artifact: `[^`]+`\./, `Public artifact: \`/downloads/photosync/${fileName}\`.`);
   doc = doc.replace(/Size: [^\n]+/, `Size: ${apkSize.toLocaleString('en-US')} bytes (${(apkSize / 1_000_000).toFixed(2)} MB).`);
   doc = doc.replace(/SHA-256: `[0-9a-f]+`\./, `SHA-256: \`${apkHash}\`.`);
-  doc = doc.replace(/all current page download links point to [^\.]+\./, `all current page download links point to ${VERSION.replace('-beta', '')}.`);
+  doc = doc.replace(/all current page download links point to [^\r\n]+\./, `all current page download links point to ${VERSION}.`);
   doc = doc.replace(/- 0\.6\.0 uses the same permanent certificate as 0\.3\.0, 0\.4\.0 and 0\.5\.0 and updates them in place\./,
-    `- ${VERSION.replace('-beta', '')} uses the same permanent certificate as 0.3.0, 0.4.0, 0.5.0 and 0.6.0 and updates them in place.`);
+    `- ${VERSION.replace('-beta', '')} uses the same permanent certificate as releases 0.3.0 through 0.7.1 and updates them in place.`);
   doc = doc.replace(/Verified: 2026-09-02 against the locally tested, release-signed [^ ]+ APK\./,
     `Verified: 2026-09-02 against the server-built, release-signed ${VERSION} APK.`);
   if (!doc.includes('0.6.1 fixes empty-album')) {

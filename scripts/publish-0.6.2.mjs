@@ -4,13 +4,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
-const VERSION = '0.6.2-beta';
-const VERSION_CODE = 8;
-const PREVIOUS_VERSION = '0.6.1-beta';
+const VERSION = '0.7.2-beta';
+const VERSION_CODE = 7002;
+const PREVIOUS_VERSION = '0.7.1-beta';
 const repoRoot = process.cwd();
 const gitCredentialFile = '/etc/bacus/git-credentials';
 const source = path.join(repoRoot, 'scripts', 'build-publish-release.mjs');
-const temp = path.join(os.tmpdir(), `photosync-publish-0.6.2-${process.pid}.mjs`);
+const temp = path.join(os.tmpdir(), `photosync-publish-0.7.2-${process.pid}.mjs`);
 const targetSigningDir = path.join(repoRoot, 'android', 'signing');
 const targetSigningProperties = path.join(targetSigningDir, 'signing.properties');
 const targetKeystore = path.join(targetSigningDir, 'photosync-release.jks');
@@ -174,7 +174,7 @@ code = code
   .replace("const PREVIOUS_VERSION = '0.6.0-beta';", `const PREVIOUS_VERSION = '${PREVIOUS_VERSION}';`);
 
 if (!code.includes(`const VERSION = '${VERSION}';`) || !code.includes(`const VERSION_CODE = ${VERSION_CODE};`)) {
-  throw new Error('Could not prepare PhotoSync 0.6.2 release script');
+  throw new Error('Could not prepare PhotoSync 0.7.2 release script');
 }
 
 const signingStage = stageSigningConfig();
@@ -187,7 +187,7 @@ try {
     timeout: 30 * 60 * 1000,
   });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`PhotoSync 0.6.2 publication failed with exit code ${result.status}`);
+  if (result.status !== 0) throw new Error(`PhotoSync 0.7.2 publication failed with exit code ${result.status}`);
 
   const manifest = publishLatestManifest();
   console.log(JSON.stringify({ updateManifestPublished: true, signingConfigStaged: signingStage.staged, ...manifest }));
