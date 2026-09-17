@@ -53,16 +53,19 @@ class OfflineFirstPhotoSyncRepository(
         delegate.observeFolders(),
         queue.asStateFlow(),
     ) { baseFolders, pending ->
-        val pendingByFolder = pending.groupingBy { it.folderId }.eachCount()
+        val queuedByFolder = pending.groupBy { it.folderId }
         baseFolders.map { folder ->
-            val pendingCount = pendingByFolder[folder.id] ?: 0
-            if (pendingCount == 0) {
+            val queued = queuedByFolder[folder.id].orEmpty()
+            val pendingCount = queued.count { !it.terminalFailure }
+            val failedCount = queued.count { it.terminalFailure }
+            if (queued.isEmpty()) {
                 folder
             } else {
                 folder.copy(
-                    photoCount = folder.photoCount + pendingCount,
+                    photoCount = folder.photoCount + queued.size,
                     pendingCount = folder.pendingCount + pendingCount,
-                    statusLabel = if (folder.failedCount > 0) folder.statusLabel else "Pending sync",
+                    failedCount = folder.failedCount + failedCount,
+                    statusLabel = if (folder.failedCount + failedCount > 0) "Failed" else "Pending sync",
                 )
             }
         }
@@ -127,7 +130,7 @@ class OfflineFirstPhotoSyncRepository(
         if (hasNetwork()) {
             runCatching { syncItem(queuedItem) }
                 .onFailure { if (it is CancellationException) throw it }
-                .onFailure { error -> Log.e(TAG, "Immediate queued upload failed", error) }
+                .onFailure { error -> handleItemFailure(queuedItem, error) }
         }
         true
     }
@@ -214,15 +217,26 @@ class OfflineFirstPhotoSyncRepository(
 
     suspend fun syncQueuedUploadsOnce() = queueMutex.withLock {
         if (!hasNetwork()) return@withLock
-        val snapshot = queue.value.toList()
+        val snapshot = queue.value.filterNot { it.terminalFailure }
         snapshot.forEach { item ->
             runCatching { check(syncItem(item)) { "Server did not accept ${item.title}." } }
                 .onFailure { if (it is CancellationException) throw it }
-                .onFailure { error ->
-                    Log.e(TAG, "Queued sync failed for ${item.title}", error)
-                    notifyShareFailure(item)
-                }
+                .onFailure { error -> handleItemFailure(item, error) }
         }
+    }
+
+    private suspend fun handleItemFailure(item: OfflineQueueItem, error: Throwable) {
+        Log.e(TAG, "Queued sync failed for ${item.title}", error)
+        // Do not retry deterministic 4xx failures forever. 429/5xx and network
+        // failures remain queued; WorkManager applies persistent exponential backoff.
+        if (error is PhotoSyncApiException && !error.isTransient) {
+            val updated = queue.value.map {
+                if (it.id == item.id) it.copy(terminalFailure = true, errorCode = error.code ?: "UPLOAD_FAILED") else it
+            }
+            persistQueue(updated)
+            queue.value = updated
+        }
+        notifyShareFailure(item)
     }
 
     private suspend fun syncItem(item: OfflineQueueItem): Boolean {
@@ -369,6 +383,8 @@ class OfflineFirstPhotoSyncRepository(
                             shareBatchId = item.optString("share_batch_id").takeIf { it.isNotBlank() },
                             shareBatchSize = item.optInt("share_batch_size").takeIf { it > 0 },
                             failureNotified = item.optBoolean("failure_notified", false),
+                            terminalFailure = item.optBoolean("terminal_failure", false),
+                            errorCode = item.optString("error_code").takeIf { it.isNotBlank() },
                         ),
                     )
                 }
@@ -389,7 +405,9 @@ class OfflineFirstPhotoSyncRepository(
                     .put("staged_uri", item.stagedUri)
                     .put("share_batch_id", item.shareBatchId ?: JSONObject.NULL)
                     .put("share_batch_size", item.shareBatchSize ?: JSONObject.NULL)
-                    .put("failure_notified", item.failureNotified),
+                    .put("failure_notified", item.failureNotified)
+                    .put("terminal_failure", item.terminalFailure)
+                    .put("error_code", item.errorCode ?: JSONObject.NULL),
             )
         }
         check(appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -408,13 +426,15 @@ class OfflineFirstPhotoSyncRepository(
         val shareBatchId: String? = null,
         val shareBatchSize: Int? = null,
         val failureNotified: Boolean = false,
+        val terminalFailure: Boolean = false,
+        val errorCode: String? = null,
     ) {
         val photoId: String get() = OFFLINE_ID_PREFIX + id
 
         fun toPhotoItem(): PhotoItem = PhotoItem(
             id = photoId,
             title = title,
-            status = PhotoSyncStatus.Pending,
+            status = if (terminalFailure) PhotoSyncStatus.Failed else PhotoSyncStatus.Pending,
             localUri = sourceUri,
             mimeType = mimeType,
         )

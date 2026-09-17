@@ -18,6 +18,18 @@ import java.io.OutputStreamWriter
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.Instant
+
+/** A structured API failure; callers must not mistake an upload validation error for loss of connectivity. */
+class PhotoSyncApiException(
+    val statusCode: Int,
+    val code: String?,
+    val retryAfterMillis: Long? = null,
+    message: String,
+) : IllegalStateException(message) {
+    val isTransient: Boolean get() = statusCode == 408 || statusCode == 429 || statusCode >= 500
+    val isNetworkOrServerFailure: Boolean get() = statusCode == 408 || statusCode >= 500
+}
 
 class PhotoSyncApiClient(
     private var baseUrl: String = DEFAULT_BASE_URL,
@@ -338,7 +350,13 @@ class PhotoSyncApiClient(
             val body = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
             diagnostics?.append("${connection.requestMethod} ${connection.url.path} -> $statusCode (${body.length} bytes)")
             if (statusCode !in 200..299) {
-                throw IllegalStateException("HTTP $statusCode: $body")
+                val problem = runCatching { JSONObject(body) }.getOrNull()
+                throw PhotoSyncApiException(
+                    statusCode = statusCode,
+                    code = problem?.optString("code")?.takeIf { it.isNotBlank() },
+                    retryAfterMillis = parseRetryAfterMillis(connection.getHeaderField("Retry-After")),
+                    message = "HTTP $statusCode: ${problem?.optString("detail") ?: body}",
+                )
             }
 
             if (body.isBlank()) JSONObject() else JSONObject(body)
@@ -378,6 +396,12 @@ class PhotoSyncApiClient(
         output.writeBytes("Content-Disposition: form-data; name=\"$name\"\r\n\r\n")
         output.write(value.toByteArray(Charsets.UTF_8))
         output.writeBytes("\r\n")
+    }
+
+    private fun parseRetryAfterMillis(value: String?): Long? {
+        val trimmed = value?.trim().orEmpty()
+        trimmed.toLongOrNull()?.let { return it.coerceAtLeast(0) * 1_000L }
+        return runCatching { (Instant.parse(trimmed).toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0) }.getOrNull()
     }
 
     companion object {

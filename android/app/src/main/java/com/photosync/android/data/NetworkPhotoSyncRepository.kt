@@ -293,7 +293,12 @@ class NetworkPhotoSyncRepository(
             .onFailure { error ->
                 Log.e(TAG, "Refresh failed", error)
                 restoreLocalState()
-                stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Offline)
+                // A bad file (413/hash mismatch/authorization) is not a server
+                // outage. Preserve the last known online state so the UI can
+                // report the file failure truthfully and continue the queue.
+                if (error !is PhotoSyncApiException || error.isNetworkOrServerFailure) {
+                    stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Offline)
+                }
             }
     }
 

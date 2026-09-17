@@ -14,9 +14,12 @@ var builder = WebApplication.CreateBuilder(args);
 // multipart headers. Reverse proxies must be configured with a matching limit.
 var maxFileBytes = builder.Configuration.GetValue<long?>("PhotoSync:MaxFileBytes")
     ?? new PhotoSyncOptions().MaxFileBytes;
-builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = checked(maxFileBytes + 1024 * 1024));
+// Reserve bounded multipart framing overhead so the configured file limit is
+// the effective limit (rather than a slightly smaller transport limit).
+var maxUploadRequestBytes = checked(maxFileBytes + 2L * 1024 * 1024);
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = maxUploadRequestBytes);
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
-    options.MultipartBodyLengthLimit = maxFileBytes);
+    options.MultipartBodyLengthLimit = maxUploadRequestBytes);
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ILoggerProvider, ServerJournalProvider>();
@@ -79,14 +82,17 @@ app.UseExceptionHandler(exceptionApp =>
     exceptionApp.Run(async context =>
     {
         var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        var tooLarge = exception is Microsoft.AspNetCore.Http.BadHttpRequestException badRequest &&
+            badRequest.Message.Contains("length limit", StringComparison.OrdinalIgnoreCase);
         var problem = new ProblemDetails
         {
-            Title = "INTERNAL_SERVER_ERROR",
-            Detail = app.Environment.IsDevelopment() ? exception?.Message : "Unexpected server error.",
-            Status = StatusCodes.Status500InternalServerError
+            Title = tooLarge ? "FILE_TOO_LARGE" : "INTERNAL_SERVER_ERROR",
+            Detail = tooLarge ? "The upload exceeds the configured file size limit." :
+                (app.Environment.IsDevelopment() ? exception?.Message : "Unexpected server error."),
+            Status = tooLarge ? StatusCodes.Status413PayloadTooLarge : StatusCodes.Status500InternalServerError
         };
-        problem.Extensions["code"] = "INTERNAL_SERVER_ERROR";
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        problem.Extensions["code"] = tooLarge ? "FILE_TOO_LARGE" : "INTERNAL_SERVER_ERROR";
+        context.Response.StatusCode = problem.Status.Value;
         await context.Response.WriteAsJsonAsync(problem);
     });
 });

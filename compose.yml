@@ -17,7 +17,9 @@ services:
       PhotoSync__DatabasePath: /data/system/photosync.db
       ConnectionStrings__PhotoSync: Data Source=/data/system/photosync.db
       PhotoSync__MaxStorageBytes: "10737418240"
-      PhotoSync__MaxFileBytes: "26214400"
+      # Original videos are supported. This finite limit is deliberately shared
+      # by Kestrel, multipart parsing and storage validation in the app.
+      PhotoSync__MaxFileBytes: "2147483648"
       PhotoSync__MaxDevices: "500"
       # This hosted beta accepts new phones. Registration is rate-limited and
       # capped by the server's configured device limit.

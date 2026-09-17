@@ -12,7 +12,7 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
 {
     public async Task<StoreFileResult> StoreAsync(StoreFileCommand command, CancellationToken cancellationToken)
     {
-        if (command.SizeBytes > options.Value.MaxFileBytes) return StoreFileResult.Invalid("File exceeds configured size limit.");
+        if (command.SizeBytes > options.Value.MaxFileBytes) return StoreFileResult.Invalid("File exceeds configured size limit.", fileTooLarge: true);
         if (!await access.CanContributeAsync(command.Album, cancellationToken)) return StoreFileResult.Forbidden();
         await guard.Gate.WaitAsync(cancellationToken);
         try { return await StoreWithinLimitAsync(command, cancellationToken); }
@@ -52,7 +52,7 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
                     var read = await source.ReadAsync(buffer, cancellationToken);
                     if (read == 0) break;
                     if (totalBytes + read > command.SizeBytes || totalBytes + read > options.Value.MaxFileBytes)
-                        return StoreFileResult.Invalid("Upload exceeds declared size or configured file limit.");
+                        return StoreFileResult.Invalid("Upload exceeds declared size or configured file limit.", fileTooLarge: totalBytes + read > options.Value.MaxFileBytes);
                     await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                     sha256.TransformBlock(buffer, 0, read, null, 0);
                     totalBytes += read;
@@ -139,25 +139,26 @@ public sealed record StoreFileCommand(DeviceEntity Device, AlbumEntity Album, st
 
 public sealed class StoreFileResult
 {
-    private StoreFileResult(bool success, bool alreadyExists, bool forbidden, string? validationError, StoredFileEntity? file)
+    private StoreFileResult(bool success, bool alreadyExists, bool forbidden, bool fileTooLarge, string? validationError, StoredFileEntity? file)
     {
-        Success = success; AlreadyExists = alreadyExists; IsForbidden = forbidden; ValidationError = validationError; File = file;
+        Success = success; AlreadyExists = alreadyExists; IsForbidden = forbidden; IsFileTooLarge = fileTooLarge; ValidationError = validationError; File = file;
     }
     public bool Success { get; }
     public bool AlreadyExists { get; }
     public bool IsForbidden { get; }
+    public bool IsFileTooLarge { get; }
     public bool IsValidationError => ValidationError is not null;
     public string? ValidationError { get; }
     public StoredFileEntity? File { get; }
-    public static StoreFileResult Stored(StoredFileEntity file) => new(true, false, false, null, file);
-    public static StoreFileResult FromExisting(StoredFileEntity file) => new(false, true, false, null, file);
+    public static StoreFileResult Stored(StoredFileEntity file) => new(true, false, false, false, null, file);
+    public static StoreFileResult FromExisting(StoredFileEntity file) => new(false, true, false, false, null, file);
     public static StoreFileResult Forbidden(string? tempFilePath = null)
     {
-        DeleteTemp(tempFilePath); return new(false, false, true, null, null);
+        DeleteTemp(tempFilePath); return new(false, false, true, false, null, null);
     }
-    public static StoreFileResult Invalid(string message, string? tempFilePath = null)
+    public static StoreFileResult Invalid(string message, string? tempFilePath = null, bool fileTooLarge = false)
     {
-        DeleteTemp(tempFilePath); return new(false, false, false, message, null);
+        DeleteTemp(tempFilePath); return new(false, false, false, fileTooLarge, message, null);
     }
     private static void DeleteTemp(string? path)
     {

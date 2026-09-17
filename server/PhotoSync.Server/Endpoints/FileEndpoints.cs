@@ -65,7 +65,14 @@ public static class FileEndpoints
         if (!request.HasFormContentType)
             return Results.BadRequest(ApiProblems.Validation("INVALID_CONTENT_TYPE", "multipart/form-data is required."));
 
-        var form = await request.ReadFormAsync(ct);
+        IFormCollection form;
+        try { form = await request.ReadFormAsync(ct); }
+        catch (InvalidDataException)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status413PayloadTooLarge, title: "FILE_TOO_LARGE",
+                detail: "The upload exceeds the configured file size limit.",
+                extensions: new Dictionary<string, object?> { ["code"] = "FILE_TOO_LARGE" });
+        }
         var file = form.Files.GetFile("file");
         if (file is null) return Results.BadRequest(ApiProblems.Validation("FILE_REQUIRED", "Multipart field 'file' is required."));
 
@@ -115,6 +122,9 @@ public static class FileEndpoints
 
         if (result.IsForbidden) return Results.StatusCode(StatusCodes.Status403Forbidden);
         if (result.AlreadyExists) return Results.Ok(ToUploadResponse(result.File!));
+        if (result.IsValidationError && result.IsFileTooLarge)
+            return Results.Problem(statusCode: StatusCodes.Status413PayloadTooLarge, title: "FILE_TOO_LARGE",
+                detail: result.ValidationError!, extensions: new Dictionary<string, object?> { ["code"] = "FILE_TOO_LARGE" });
         if (result.IsValidationError)
             return Results.BadRequest(ApiProblems.Validation("UPLOAD_VERIFICATION_FAILED", result.ValidationError!));
 

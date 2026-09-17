@@ -53,7 +53,10 @@ public sealed class CapacityTests
             { new StringContent("16"), "size_bytes" }, { new StringContent(Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant()), "sha256" },
             { new StringContent("2026-08-31T12:00:00Z"), "created_at" }, { new ByteArrayContent(payload), "file", "file.png" }
         };
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync("/api/files/upload", form)).StatusCode);
+        var response = await client.PostAsync("/api/files/upload", form);
+        Assert.Equal(option == "PhotoSync:MaxFileBytes" ? HttpStatusCode.RequestEntityTooLarge : HttpStatusCode.BadRequest, response.StatusCode);
+        if (option == "PhotoSync:MaxFileBytes")
+            Assert.Contains("FILE_TOO_LARGE", await response.Content.ReadAsStringAsync());
         Assert.Empty(Directory.GetFiles(factory.StoragePath, "*", SearchOption.AllDirectories));
     }
 }

@@ -63,7 +63,7 @@ By default, runtime files and the SQLite database are written below `data/`. Thi
 
 New-device enrollment is closed by default (`PhotoSync:AllowDeviceEnrollment=false`). Existing installations must present their current secret. An operator can explicitly enable enrollment with `PhotoSync__AllowDeviceEnrollment=true` while restricting access to trusted clients at the proxy; close it again after enrollment. `PhotoSync:MaxDevices` defaults to 5. Reinstallations with a new identity count as new devices; a known UUID cannot recover a lost secret.
 
-The configurable file limit is now 2 GiB (`PhotoSync:MaxFileBytes`). Reverse-proxy request limits and timeouts must also support the desired size. Uploads are streamed but currently restart from the beginning after a connection failure; resumable upload is not implemented.
+The configurable file limit is 2 GiB (`PhotoSync:MaxFileBytes`; Docker uses `PhotoSync__MaxFileBytes`). Kestrel, multipart parsing and storage verification derive from this one setting. Reverse-proxy request limits and timeouts must also support the desired size; do not proxy uploads through Cloudflare's normal HTTP upload path unless its plan's request-size/time limits cover the configured maximum. Uploads are streamed and SHA-256-verified, but currently restart from the beginning after a connection failure; resumable upload remains the next protocol phase and is deliberately not advertised by the server.
 
 See [hardening results and remaining device checks](docs/hardening-2026-09-07.md) before deploying these changes.
 
