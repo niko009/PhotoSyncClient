@@ -171,6 +171,17 @@ class OfflineFirstPhotoSyncRepository(
         queue.value = nextQueue
         ShareUploadNotifier.showQueued(appContext, batchId, uniqueUris.size)
         OfflineSyncScheduler.enqueue(appContext)
+
+        // A share target is still an active Activity, so synchronise immediately
+        // when possible. This lets Android show its mandatory source-deletion
+        // confirmation before returning to the gallery.
+        if (hasNetwork()) {
+            queuedItems.forEach { item ->
+                runCatching { syncItem(item) }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .onFailure { error -> handleItemFailure(item, error) }
+            }
+        }
         true
     }
 
