@@ -8,6 +8,7 @@ import android.util.Log
 import com.photosync.android.domain.model.DashboardStats
 import com.photosync.android.domain.model.FolderDetail
 import com.photosync.android.domain.model.FolderSummary
+import com.photosync.android.domain.model.PhotoCleanupPolicy
 import com.photosync.android.domain.model.PhotoItem
 import com.photosync.android.domain.model.PhotoSyncStatus
 import com.photosync.android.domain.repository.PhotoSyncRepository
@@ -114,8 +115,11 @@ class OfflineFirstPhotoSyncRepository(
     override suspend fun uploadToFolder(folderId: String, uri: Uri): Boolean = queueMutex.withLock {
         val folder = delegate.observeFolder(folderId).first() ?: return@withLock false
         if (!folder.canContribute) return@withLock false
+        val cleanupPolicy = effectiveCleanupPolicy(folderId)
 
-        val queuedItem = runCatching { withContext(Dispatchers.IO) { createQueueItem(folderId, uri) } }
+        val queuedItem = runCatching {
+            withContext(Dispatchers.IO) { createQueueItem(folderId, uri, cleanupPolicy) }
+        }
             .onFailure { if (it is CancellationException) throw it }
             .onFailure { error -> Log.e(TAG, "Could not queue media for offline sync", error) }
             .getOrNull() ?: return@withLock false
@@ -140,6 +144,7 @@ class OfflineFirstPhotoSyncRepository(
         if (uniqueUris.isEmpty()) return@withLock false
         val folder = delegate.observeFolder(folderId).first() ?: return@withLock false
         if (!folder.canContribute) return@withLock false
+        val cleanupPolicy = effectiveCleanupPolicy(folderId)
 
         val batchId = UUID.randomUUID().toString()
         val staged = mutableListOf<OfflineQueueItem>()
@@ -149,6 +154,7 @@ class OfflineFirstPhotoSyncRepository(
                     createQueueItem(
                         folderId = folderId,
                         sourceUri = uri,
+                        cleanupPolicy = cleanupPolicy,
                         shareBatchId = batchId,
                         shareBatchSize = uniqueUris.size,
                     ).also(staged::add)
@@ -249,6 +255,7 @@ class OfflineFirstPhotoSyncRepository(
             sourceUri = sourceUri,
             displayName = item.title,
             mimeType = item.mimeType,
+            cleanupPolicy = item.cleanupPolicy,
         )
         if (!acceptedByDelegate) {
             return false
@@ -277,6 +284,7 @@ class OfflineFirstPhotoSyncRepository(
     private fun createQueueItem(
         folderId: String,
         sourceUri: Uri,
+        cleanupPolicy: PhotoCleanupPolicy,
         shareBatchId: String? = null,
         shareBatchSize: Int? = null,
     ): OfflineQueueItem {
@@ -291,6 +299,7 @@ class OfflineFirstPhotoSyncRepository(
             folderId = folderId,
             title = title,
             mimeType = mimeType,
+            cleanupPolicy = cleanupPolicy,
             sourceUri = sourceUri.toString(),
             stagedUri = durableUri.toString(),
             shareBatchId = shareBatchId,
@@ -323,6 +332,10 @@ class OfflineFirstPhotoSyncRepository(
         queue.value = nextQueue
         if (deleteStagedFile) deleteStagedFile(item)
     }
+
+    private suspend fun effectiveCleanupPolicy(folderId: String): PhotoCleanupPolicy =
+        delegate.observeFolderPhotoCleanupPolicy(folderId).first()
+            ?: delegate.observeGlobalPhotoCleanupPolicy().first()
 
     private fun deleteStagedFile(item: OfflineQueueItem) {
         val uri = Uri.parse(item.stagedUri)
@@ -374,6 +387,11 @@ class OfflineFirstPhotoSyncRepository(
                             folderId = item.getString("folder_id"),
                             title = item.getString("title"),
                             mimeType = item.getString("mime_type"),
+                            // Queue entries from before this field was added must never be
+                            // retroactively cleaned up after the setting changes.
+                            cleanupPolicy = item.optString("cleanup_policy")
+                                .let { value -> runCatching { PhotoCleanupPolicy.valueOf(value) }.getOrNull() }
+                                ?: PhotoCleanupPolicy.Keep,
                             sourceUri = item.optString("source_uri")
                                 .takeIf { it.isNotBlank() }
                                 ?: item.getString("local_uri"),
@@ -401,6 +419,7 @@ class OfflineFirstPhotoSyncRepository(
                     .put("folder_id", item.folderId)
                     .put("title", item.title)
                     .put("mime_type", item.mimeType)
+                    .put("cleanup_policy", item.cleanupPolicy.name)
                     .put("source_uri", item.sourceUri)
                     .put("staged_uri", item.stagedUri)
                     .put("share_batch_id", item.shareBatchId ?: JSONObject.NULL)
@@ -421,6 +440,7 @@ class OfflineFirstPhotoSyncRepository(
         val folderId: String,
         val title: String,
         val mimeType: String,
+        val cleanupPolicy: PhotoCleanupPolicy,
         val sourceUri: String,
         val stagedUri: String,
         val shareBatchId: String? = null,

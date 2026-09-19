@@ -32,6 +32,7 @@ interface PhotoSyncRepository {
         sourceUri: Uri,
         displayName: String,
         mimeType: String,
+        cleanupPolicy: PhotoCleanupPolicy? = null,
     ): Boolean = uploadToFolder(folderId, uploadUri)
     suspend fun downloadPhoto(folderId: String, photoId: String)
     suspend fun deletePhoto(folderId: String, photoId: String)

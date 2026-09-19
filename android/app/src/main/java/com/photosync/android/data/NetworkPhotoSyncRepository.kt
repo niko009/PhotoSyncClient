@@ -83,8 +83,9 @@ class NetworkPhotoSyncRepository(
         sourceUri: Uri,
         displayName: String,
         mimeType: String,
+        cleanupPolicy: PhotoCleanupPolicy?,
     ) = operationMutex.withLock {
-        uploadToFolderInternal(folderId, uploadUri, sourceUri, displayName, mimeType)
+        uploadToFolderInternal(folderId, uploadUri, sourceUri, displayName, mimeType, cleanupPolicy)
     }
     override suspend fun deletePhoto(folderId: String, photoId: String) = operationMutex.withLock { deletePhotoInternal(folderId, photoId) }
     override suspend fun signInWithGoogle(idToken: String) = operationMutex.withLock {
@@ -377,6 +378,7 @@ class NetworkPhotoSyncRepository(
         sourceUri: Uri,
         displayName: String?,
         mimeTypeOverride: String?,
+        cleanupPolicy: PhotoCleanupPolicy? = null,
     ): Boolean {
         var attemptedPhotoId: String? = null
         return runCatching {
@@ -435,7 +437,12 @@ class NetworkPhotoSyncRepository(
                         openFile = openFile,
                     )
                 }
-                val localUriAfterCleanup = applyCleanupPolicy(sourceUri, folderId, mimeType)
+                val localUriAfterCleanup = applyCleanupPolicy(
+                    sourceUri,
+                    cleanupPolicy ?: effectivePolicy(folderId),
+                    folderId,
+                    mimeType,
+                )
                 updateLocalPhoto(
                     folderId,
                     PhotoItem(
@@ -771,8 +778,13 @@ class NetworkPhotoSyncRepository(
         return folderPolicies.value[folderId] ?: preferencesStore.getGlobalPhotoCleanupPolicy()
     }
 
-    private fun applyCleanupPolicy(uri: Uri, folderId: String, mimeType: String): String? {
-        return when (cleanupAction(effectivePolicy(folderId), mimeType)) {
+    private fun applyCleanupPolicy(
+        uri: Uri,
+        policy: PhotoCleanupPolicy,
+        folderId: String,
+        mimeType: String,
+    ): String? {
+        return when (cleanupAction(policy, mimeType)) {
             MediaCleanupAction.KeepSource -> uri.toString()
             MediaCleanupAction.CompressImageThenDeleteSource -> {
                 runCatching {

@@ -74,4 +74,20 @@ class OfflineQueueContextTest {
         assertTrue(queueJson.contains("share_batch_id"))
         assertTrue(File(context.filesDir, "offline_queue/folder-1").listFiles().orEmpty().isNotEmpty())
     }
+
+    @Test
+    fun queuedMediaKeepsTheCleanupPolicySelectedWhenItWasAdded() = runBlocking {
+        context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .edit().remove("items").commit()
+        val source = File(context.cacheDir, "policy-snapshot.jpg").apply { writeText("photo") }
+        val delegate = FakePhotoSyncRepository()
+        val repository = OfflineFirstPhotoSyncRepository(context, delegate)
+
+        assertTrue(repository.uploadToFolder("folder-1", Uri.fromFile(source)))
+        delegate.updateGlobalPhotoCleanupPolicy(com.photosync.android.domain.model.PhotoCleanupPolicy.Delete)
+
+        val queueJson = context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .getString("items", "").orEmpty()
+        assertTrue(queueJson.contains("\"cleanup_policy\":\"Keep\""))
+    }
 }
