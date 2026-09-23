@@ -1,0 +1,50 @@
+name: Signed Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_label:
+        description: Version or release label being built
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  signed-apk:
+    name: Build signed APK
+    runs-on: ubuntu-latest
+    environment: android-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Materialize ephemeral signing files
+        env:
+          PHOTOSYNC_KEYSTORE_BASE64: ${{ secrets.PHOTOSYNC_KEYSTORE_BASE64 }}
+          PHOTOSYNC_SIGNING_PROPERTIES: ${{ secrets.PHOTOSYNC_SIGNING_PROPERTIES }}
+        run: |
+          test -n "$PHOTOSYNC_KEYSTORE_BASE64"
+          test -n "$PHOTOSYNC_SIGNING_PROPERTIES"
+          mkdir -p android/signing
+          printf '%s' "$PHOTOSYNC_KEYSTORE_BASE64" | base64 --decode > android/signing/photosync-release.jks
+          printf '%s' "$PHOTOSYNC_SIGNING_PROPERTIES" > android/signing/signing.properties
+          chmod 600 android/signing/photosync-release.jks android/signing/signing.properties
+      - name: Verify and build signed release
+        run: |
+          ./gradlew :android:app:testDebugUnitTest :android:app:lintRelease :android:app:assembleRelease
+          test ! -e android/app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: photosync-${{ inputs.release_label }}-signed-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove signing material
+        if: always()
+        run: rm -rf android/signing

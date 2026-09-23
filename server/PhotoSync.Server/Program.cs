@@ -55,7 +55,9 @@ builder.Services.AddDbContext<PhotoSyncDbContext>((services, options) =>
     options.UseSqlite(connectionString);
 });
 builder.Services.AddSingleton<StoragePathResolver>();
+builder.Services.AddSingleton<StorageIntegrityService>();
 builder.Services.AddScoped<FileStorageService>();
+builder.Services.AddScoped<ResumableUploadService>();
 builder.Services.AddScoped<FolderAccessService>();
 builder.Services.AddSingleton<UploadGuard>();
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
@@ -84,14 +86,15 @@ app.UseExceptionHandler(exceptionApp =>
         var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
         var tooLarge = exception is Microsoft.AspNetCore.Http.BadHttpRequestException badRequest &&
             badRequest.Message.Contains("length limit", StringComparison.OrdinalIgnoreCase);
+        var storageUnavailable = exception is StorageUnavailableException;
         var problem = new ProblemDetails
         {
-            Title = tooLarge ? "FILE_TOO_LARGE" : "INTERNAL_SERVER_ERROR",
-            Detail = tooLarge ? "The upload exceeds the configured file size limit." :
+            Title = tooLarge ? "FILE_TOO_LARGE" : storageUnavailable ? "STORAGE_UNAVAILABLE" : "INTERNAL_SERVER_ERROR",
+            Detail = tooLarge ? "The upload exceeds the configured file size limit." : storageUnavailable ? "Media storage is temporarily unavailable." :
                 (app.Environment.IsDevelopment() ? exception?.Message : "Unexpected server error."),
-            Status = tooLarge ? StatusCodes.Status413PayloadTooLarge : StatusCodes.Status500InternalServerError
+            Status = tooLarge ? StatusCodes.Status413PayloadTooLarge : storageUnavailable ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status500InternalServerError
         };
-        problem.Extensions["code"] = tooLarge ? "FILE_TOO_LARGE" : "INTERNAL_SERVER_ERROR";
+        problem.Extensions["code"] = tooLarge ? "FILE_TOO_LARGE" : storageUnavailable ? "STORAGE_UNAVAILABLE" : "INTERNAL_SERVER_ERROR";
         context.Response.StatusCode = problem.Status.Value;
         await context.Response.WriteAsJsonAsync(problem);
     });
@@ -105,7 +108,8 @@ using (var scope = app.Services.CreateScope())
     await FamilySharingSchema.InitializeAsync(dbContext);
 
     var pathResolver = scope.ServiceProvider.GetRequiredService<StoragePathResolver>();
-    Directory.CreateDirectory(pathResolver.StorageRoot);
+    var storageIntegrity = scope.ServiceProvider.GetRequiredService<StorageIntegrityService>();
+    await storageIntegrity.InitializeAsync(dbContext);
 
     // Existing database rows may predate a temporary storage outage. Ensure every
     // active album has its physical directory before accepting requests. This also
@@ -142,7 +146,14 @@ app.MapFamilyEndpoints();
 app.MapJoinLanding();
 app.MapPortal();
 app.MapGet("/health", async (PhotoSyncDbContext db) =>
-    await db.Database.CanConnectAsync() ? Results.Ok(new { status = "ok", service = "photosync", protocol_version = 2 }) : Results.StatusCode(503)).AllowAnonymous();
+{
+    var storageIntegrity = app.Services.GetRequiredService<StorageIntegrityService>();
+    var databaseReady = await db.Database.CanConnectAsync();
+    var storageReady = await storageIntegrity.IsReadyAsync();
+    return databaseReady && storageReady
+        ? Results.Ok(new { status = "ok", service = "photosync", protocol_version = 2 })
+        : Results.StatusCode(503);
+}).AllowAnonymous();
 app.MapAdminEndpoints();
 app.MapDeviceEndpoints();
 app.MapAlbumEndpoints();

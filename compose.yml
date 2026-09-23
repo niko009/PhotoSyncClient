@@ -21,9 +21,9 @@ services:
       # by Kestrel, multipart parsing and storage validation in the app.
       PhotoSync__MaxFileBytes: "2147483648"
       PhotoSync__MaxDevices: "500"
-      # This hosted beta accepts new phones. Registration is rate-limited and
-      # capped by the server's configured device limit.
-      PhotoSync__AllowDeviceEnrollment: "true"
+      # Closed by default. Enable enrollment only for a short, operator-managed
+      # window after the reverse proxy has been restricted to trusted clients.
+      PhotoSync__AllowDeviceEnrollment: "${PHOTOSYNC_ALLOW_DEVICE_ENROLLMENT:-false}"
       PhotoSync__RequestLogging__Enabled: "true"
       PhotoSync__RequestLogging__Directory: /data/logs
       # Public OAuth audience used for server-side Google ID-token validation.
@@ -45,6 +45,15 @@ services:
     # Only the Bacus reverse proxy should reach this port; no host port binding.
     expose:
       - "8080"
+    # Docker reports the container as healthy only after the application's
+    # readiness endpoint can reach SQLite and validate the external /storage
+    # mount marker/write probe. The proxy/operator must consume this status.
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8080/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
       bacus-net:
         aliases:

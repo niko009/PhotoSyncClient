@@ -14,6 +14,10 @@ public static class FileEndpoints
         group.MapPost("/check", CheckAsync);
         group.MapPost("/album/{albumId:int}/check", CheckAlbumAsync);
         group.MapPost("/upload", UploadAsync).DisableAntiforgery();
+        group.MapPost("/uploads", StartResumableAsync);
+        group.MapGet("/uploads/{uploadId:guid}", GetResumableStatusAsync);
+        group.MapPut("/uploads/{uploadId:guid}", AppendResumableAsync).DisableAntiforgery();
+        group.MapPost("/uploads/{uploadId:guid}/complete", CompleteResumableAsync);
         group.MapGet("/device/{deviceId:int}", ListForDeviceAsync);
         group.MapGet("/album/{albumId:int}", ListForAlbumAsync);
         group.MapGet("/{fileId:int}/preview", PreviewAsync);
@@ -134,6 +138,84 @@ public static class FileEndpoints
 
     private static UploadFileResponse ToUploadResponse(StoredFileEntity file) =>
         new(file.Id, file.StoredName, file.RelativePath, false, file.UploadedAtUtc);
+
+    private static async Task<IResult> StartResumableAsync(ResumableUploadRequest request, PhotoSyncDbContext db,
+        FolderAccessService access, ResumableUploadService uploads, CancellationToken ct)
+    {
+        var target = await ResolveUploadTargetAsync(request.AlbumId, request.DeviceUuid, request.AlbumName, db, access, ct);
+        if (target is null) return Results.NotFound(ApiProblems.NotFound("UPLOAD_TARGET_NOT_FOUND", "Upload target was not found."));
+        var (session, existing, error) = await uploads.StartAsync(target.Value.Device, target.Value.Album, request, ct);
+        if (error is not null) return Results.BadRequest(ApiProblems.Validation(error, "Invalid resumable upload metadata."));
+        if (existing is not null) return Results.Ok(new ResumableUploadStatusResponse(Guid.Empty, existing.SizeBytes, existing.SizeBytes, ToUploadResponse(existing)));
+        return Results.Ok(ToStatus(session!));
+    }
+
+    private static async Task<IResult> GetResumableStatusAsync(Guid uploadId, PhotoSyncDbContext db,
+        FolderAccessService access, CancellationToken ct)
+    {
+        var session = await db.UploadSessions.SingleOrDefaultAsync(x => x.Id == uploadId, ct);
+        if (session is null || !await CanAccessSessionAsync(session, db, access, ct)) return Results.NotFound();
+        return Results.Ok(await ToStatusAsync(session, db, ct));
+    }
+
+    private static async Task<IResult> AppendResumableAsync(Guid uploadId, long? offset, HttpRequest request,
+        PhotoSyncDbContext db, FolderAccessService access, ResumableUploadService uploads, CancellationToken ct)
+    {
+        if (offset is null || offset < 0) return Results.BadRequest(ApiProblems.Validation("INVALID_UPLOAD_OFFSET", "An upload offset is required."));
+        var session = await db.UploadSessions.SingleOrDefaultAsync(x => x.Id == uploadId, ct);
+        if (session is null || !await CanAccessSessionAsync(session, db, access, ct)) return Results.NotFound();
+        var (updated, error) = await uploads.AppendAsync(session, offset.Value, request.Body, ct);
+        if (error == "UPLOAD_OFFSET_MISMATCH") return Results.Conflict(new { code = error, received_bytes = updated!.ReceivedBytes });
+        if (error is not null) return Results.BadRequest(ApiProblems.Validation(error, "Invalid upload chunk."));
+        return Results.Ok(ToStatus(updated!));
+    }
+
+    private static async Task<IResult> CompleteResumableAsync(Guid uploadId, PhotoSyncDbContext db,
+        FolderAccessService access, ResumableUploadService uploads, CancellationToken ct)
+    {
+        var session = await db.UploadSessions.SingleOrDefaultAsync(x => x.Id == uploadId, ct);
+        if (session is null || !await CanAccessSessionAsync(session, db, access, ct)) return Results.NotFound();
+        var (file, error) = await uploads.CompleteAsync(session, ct);
+        if (error == "UPLOAD_INCOMPLETE") return Results.Conflict(new { code = error, received_bytes = session.ReceivedBytes, size_bytes = session.SizeBytes });
+        if (error is not null) return Results.BadRequest(ApiProblems.Validation(error, "Could not complete upload."));
+        return Results.Ok(ToUploadResponse(file!));
+    }
+
+    private static ResumableUploadStatusResponse ToStatus(UploadSessionEntity session) =>
+        new(session.Id, session.ReceivedBytes, session.SizeBytes);
+
+    private static async Task<ResumableUploadStatusResponse> ToStatusAsync(UploadSessionEntity session, PhotoSyncDbContext db, CancellationToken ct) =>
+        session.StoredFileId is int id
+            ? new(session.Id, session.SizeBytes, session.SizeBytes, ToUploadResponse((await db.Files.IgnoreQueryFilters().SingleAsync(x => x.Id == id, ct))))
+            : ToStatus(session);
+
+    private static async Task<bool> CanAccessSessionAsync(UploadSessionEntity session, PhotoSyncDbContext db,
+        FolderAccessService access, CancellationToken ct)
+    {
+        var album = await db.Albums.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == session.AlbumId, ct);
+        return album is not null && await access.CanContributeAsync(album, ct);
+    }
+
+    private static async Task<(DeviceEntity Device, AlbumEntity Album)?> ResolveUploadTargetAsync(int? requestedAlbumId,
+        Guid? requestedDeviceUuid, string? requestedAlbumName, PhotoSyncDbContext db, FolderAccessService access, CancellationToken ct)
+    {
+        AlbumEntity? album;
+        DeviceEntity? device;
+        if (requestedAlbumId is > 0)
+        {
+            album = await db.Albums.IgnoreQueryFilters().Include(x => x.Device)
+                .SingleOrDefaultAsync(x => x.Id == requestedAlbumId && x.ArchivedAtUtc == null, ct);
+            device = album?.Device;
+        }
+        else if (requestedDeviceUuid is Guid uuid && !string.IsNullOrWhiteSpace(requestedAlbumName))
+        {
+            device = await db.Devices.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.DeviceUuid == uuid, ct);
+            album = device is null ? null : await db.Albums.IgnoreQueryFilters().SingleOrDefaultAsync(
+                x => x.DeviceId == device.Id && x.AlbumName == requestedAlbumName.Trim() && x.ArchivedAtUtc == null, ct);
+        }
+        else return null;
+        return device is not null && album is not null && await access.CanContributeAsync(album, ct) ? (device, album) : null;
+    }
 
     private static async Task<IResult> ListForDeviceAsync(int deviceId, PhotoSyncDbContext db,
         FolderAccessService access, CancellationToken ct)

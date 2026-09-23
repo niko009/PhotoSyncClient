@@ -13,7 +13,6 @@ import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
 import java.io.BufferedReader
-import java.io.DataOutputStream
 import java.io.OutputStreamWriter
 import java.io.OutputStream
 import java.net.HttpURLConnection
@@ -248,44 +247,44 @@ class PhotoSyncApiClient(
         createdAtIso: String,
         openFile: () -> InputStream,
     ): FileUploadResultDto {
-        val boundary = "PhotoSyncBoundary${System.currentTimeMillis()}"
-        val connection = openConnection("/api/files/upload", "POST")
-        connection.doOutput = true
-        connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        connection.setChunkedStreamingMode(64 * 1024)
-        connection.readTimeout = 120_000
-        try {
+        // The server keys an unfinished session by device/album/SHA-256. Calling
+        // start again after a process or network restart is therefore safe and
+        // returns the durable offset instead of starting the media from zero.
+        val start = JSONObject()
+            .put("original_name", originalName)
+            .put("mime_type", mimeType)
+            .put("size_bytes", sizeBytes)
+            .put("sha256", sha256)
+            .put("created_at", createdAtIso)
+            .put("is_video", mimeType.startsWith("video/"))
+        if (albumId != null) start.put("album_id", albumId)
+        else start.put("device_uuid", requireNotNull(deviceUuid)).put("album_name", requireNotNull(albumName))
+        var status = postJson("/api/files/uploads", start)
+        status.optJSONObject("completed_file")?.let { return it.toUploadResult() }
+        val uploadId = status.getString("upload_id")
+        var offset = status.getLong("received_bytes")
+        require(offset in 0..sizeBytes) { "Server returned an invalid upload offset" }
 
-            DataOutputStream(connection.outputStream).use { output ->
-                if (albumId != null) {
-                    writeFormField(output, boundary, "album_id", albumId.toString())
-                } else {
-                    writeFormField(output, boundary, "device_uuid", requireNotNull(deviceUuid))
-                    writeFormField(output, boundary, "album_name", requireNotNull(albumName))
+        while (offset < sizeBytes) {
+            val chunkSize = minOf(RESUMABLE_CHUNK_BYTES.toLong(), sizeBytes - offset).toInt()
+            val connection = openConnection("/api/files/uploads/$uploadId?offset=$offset", "PUT")
+            connection.doOutput = true
+            connection.readTimeout = 120_000
+            connection.setRequestProperty("Content-Type", "application/octet-stream")
+            connection.setFixedLengthStreamingMode(chunkSize)
+            try {
+                connection.outputStream.use { output ->
+                    openFile().use { input ->
+                        input.skipFully(offset)
+                        input.copyExactlyTo(output, chunkSize)
+                    }
                 }
-                writeFormField(output, boundary, "original_name", originalName)
-                writeFormField(output, boundary, "mime_type", mimeType)
-                writeFormField(output, boundary, "size_bytes", sizeBytes.toString())
-                writeFormField(output, boundary, "sha256", sha256)
-                writeFormField(output, boundary, "created_at", createdAtIso)
-                writeFormField(output, boundary, "is_video", mimeType.startsWith("video/").toString())
-
-                output.writeBytes("--$boundary\r\n")
-                val headerName = originalName.replace(Regex("[\\r\\n\\\"]"), "_")
-                output.write("Content-Disposition: form-data; name=\"file\"; filename=\"$headerName\"\r\n".toByteArray(Charsets.UTF_8))
-                output.writeBytes("Content-Type: " + mimeType.replace("\r", "").replace("\n", "") + "\r\n\r\n")
-                openFile().use { input -> input.copyTo(output, 64 * 1024) }
-                output.writeBytes("\r\n--$boundary--\r\n")
-                output.flush()
-            }
-
-            val response = execute(connection)
-            return FileUploadResultDto(
-                serverFileId = response.getInt("server_file_id"),
-                storedName = response.getString("stored_name"),
-                relativePath = response.getString("relative_path"),
-            )
-        } finally { connection.disconnect() }
+                status = execute(connection)
+                offset = status.getLong("received_bytes")
+                require(offset <= sizeBytes) { "Server returned an invalid upload offset" }
+            } finally { connection.disconnect() }
+        }
+        return postJson("/api/files/uploads/$uploadId/complete", JSONObject()).toUploadResult()
     }
 
     private fun parseFiles(response: JSONObject): List<FileItemDto> {
@@ -386,18 +385,6 @@ class PhotoSyncApiClient(
         }
     }
 
-    private fun writeFormField(
-        output: DataOutputStream,
-        boundary: String,
-        name: String,
-        value: String,
-    ) {
-        output.writeBytes("--$boundary\r\n")
-        output.writeBytes("Content-Disposition: form-data; name=\"$name\"\r\n\r\n")
-        output.write(value.toByteArray(Charsets.UTF_8))
-        output.writeBytes("\r\n")
-    }
-
     private fun parseRetryAfterMillis(value: String?): Long? {
         val trimmed = value?.trim().orEmpty()
         trimmed.toLongOrNull()?.let { return it.coerceAtLeast(0) * 1_000L }
@@ -406,6 +393,7 @@ class PhotoSyncApiClient(
 
     companion object {
         const val DEFAULT_BASE_URL = BuildConfig.DEFAULT_SERVER_URL
+        private const val RESUMABLE_CHUNK_BYTES = 4 * 1024 * 1024
     }
 
     private fun effectiveBaseUrl(): String = normalizeBaseUrl(baseUrl)
@@ -422,4 +410,35 @@ private fun JSONObject.toGoogleAccount(): GoogleAccount? {
         displayName = getString("display_name"),
         linkedDevices = getInt("linked_devices"),
     )
+}
+
+private fun JSONObject.toUploadResult(): FileUploadResultDto = FileUploadResultDto(
+    serverFileId = getInt("server_file_id"),
+    storedName = getString("stored_name"),
+    relativePath = getString("relative_path"),
+)
+
+private fun InputStream.skipFully(bytes: Long) {
+    var remaining = bytes
+    val buffer = ByteArray(64 * 1024)
+    while (remaining > 0) {
+        val skipped = skip(remaining)
+        if (skipped > 0) remaining -= skipped
+        else {
+            val read = read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+            check(read >= 0) { "Upload source ended before resume offset" }
+            remaining -= read
+        }
+    }
+}
+
+private fun InputStream.copyExactlyTo(output: OutputStream, bytes: Int) {
+    var remaining = bytes
+    val buffer = ByteArray(64 * 1024)
+    while (remaining > 0) {
+        val read = read(buffer, 0, minOf(buffer.size, remaining))
+        check(read >= 0) { "Upload source ended before declared size" }
+        output.write(buffer, 0, read)
+        remaining -= read
+    }
 }

@@ -65,10 +65,11 @@ or restored volume must be writable by the image's app user. Recreating the app
 must retain this volume. Never remove it during redeploys. Do not run
 `docker compose down --volumes` against this project.
 
-No local photos or databases are included or migrated automatically. Arrange a
-consistent backup of the entire data volume (stop uploads/the app during a file
-copy, or use a SQLite-aware backup procedure), plus off-host backup and a restore
-test. Persistent storage is not a backup. Check disk capacity before onboarding.
+No local photos or databases are included or migrated automatically. Follow the
+[backup and recovery runbook](backup-restore-runbook.md) before onboarding. It
+creates a stopped-app SQLite plus originals snapshot, requires an off-host
+destination, and requires an isolated restore test. Persistent storage is not a
+backup. Check disk capacity before onboarding.
 
 ## Existing Bacus Agent contract
 

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PhotoSync.Server.Contracts;
 using PhotoSync.Server.Data;
+using PhotoSync.Server.Services;
 using Xunit;
 
 namespace PhotoSync.Server.Tests;
@@ -114,6 +115,40 @@ public sealed class StorageReliabilityTests
         Assert.Equal(HttpStatusCode.Created, (await client.PostAsync("/api/files/upload", retry)).StatusCode);
         Assert.Equal(1, await db.Files.IgnoreQueryFilters().CountAsync());
         Assert.Single(Directory.GetFiles(factory.StoragePath, "*.jpg", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task MissingMountMarker_FailsReadinessAndPreventsUploads()
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        using var client = factory.CreateClient();
+        var uuid = await Register(client);
+        File.Delete(Path.Combine(factory.StoragePath, ".photosync-storage-root"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health")).StatusCode);
+        using var upload = Upload(uuid);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.PostAsync("/api/files/upload", upload)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Reconciliation_RecordsOrphanedOriginalWithoutMovingOrDeletingIt()
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        using var client = factory.CreateClient();
+        _ = await client.GetAsync("/health"); // Force application startup before adding the simulated crash artifact.
+        var orphanRelativePath = Path.Combine("phone", "album", "uncommitted.jpg");
+        var orphanPath = Path.Combine(factory.StoragePath, orphanRelativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(orphanPath)!);
+        await File.WriteAllBytesAsync(orphanPath, [1, 2, 3, 4]);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>();
+        var integrity = scope.ServiceProvider.GetRequiredService<StorageIntegrityService>();
+        await integrity.InitializeAsync(db);
+
+        Assert.True(File.Exists(orphanPath));
+        var report = Assert.Single(Directory.GetFiles(Path.Combine(factory.StoragePath, "_recovery"), "orphaned-originals-*.json"));
+        Assert.Contains(orphanRelativePath.Replace('\\', '/'), await File.ReadAllTextAsync(report));
     }
 
     private static async Task<Guid> Register(HttpClient client)

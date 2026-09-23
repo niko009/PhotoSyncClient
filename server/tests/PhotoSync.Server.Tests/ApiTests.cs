@@ -182,6 +182,40 @@ public sealed class ApiTests
         Assert.Equal(0, await db.Files.CountAsync(x => x.OriginalName == "clip.mp4"));
     }
 
+    [Fact]
+    public async Task ResumableUpload_ResumesAfterInterruption_AndCompletionIsIdempotent()
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        using var client = factory.CreateClient();
+        var deviceUuid = Guid.NewGuid();
+        await RegisterDeviceAsync(client, deviceUuid, "Resume phone");
+        var albumResponse = await client.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(deviceUuid, "Resume"));
+        var albumId = (await albumResponse.Content.ReadFromJsonAsync<CreateAlbumResponse>())!.AlbumId;
+        var bytes = Encoding.UTF8.GetBytes("an interrupted video upload can continue");
+        var request = new ResumableUploadRequest(albumId, null, null, "clip.mp4", "video/mp4", bytes.Length,
+            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), DateTimeOffset.UtcNow, true);
+
+        var started = await client.PostAsJsonAsync("/api/files/uploads", request);
+        started.EnsureSuccessStatusCode();
+        var session = (await started.Content.ReadFromJsonAsync<ResumableUploadStatusResponse>())!;
+        using (var first = new ByteArrayContent(bytes[..10]))
+            (await client.PutAsync($"/api/files/uploads/{session.UploadId}?offset=0", first)).EnsureSuccessStatusCode();
+
+        var afterRestart = await client.GetFromJsonAsync<ResumableUploadStatusResponse>($"/api/files/uploads/{session.UploadId}");
+        Assert.NotNull(afterRestart);
+        Assert.Equal(10, afterRestart!.ReceivedBytes);
+        using (var rest = new ByteArrayContent(bytes[10..]))
+            (await client.PutAsync($"/api/files/uploads/{session.UploadId}?offset=10", rest)).EnsureSuccessStatusCode();
+
+        var complete = await client.PostAsJsonAsync($"/api/files/uploads/{session.UploadId}/complete", new { });
+        complete.EnsureSuccessStatusCode();
+        var result = (await complete.Content.ReadFromJsonAsync<UploadFileResponse>())!;
+        var repeated = await client.PostAsJsonAsync($"/api/files/uploads/{session.UploadId}/complete", new { });
+        repeated.EnsureSuccessStatusCode();
+        Assert.Equal(result.ServerFileId, (await repeated.Content.ReadFromJsonAsync<UploadFileResponse>())!.ServerFileId);
+        Assert.Equal(bytes, await client.GetByteArrayAsync($"/api/files/{result.ServerFileId}/download"));
+    }
+
     private static async Task<int> RegisterDeviceAsync(HttpClient client, Guid deviceUuid, string deviceName)
     {
         client.DefaultRequestHeaders.Remove("X-PhotoSync-Device");

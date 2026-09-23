@@ -57,6 +57,7 @@ public sealed class CapacityTests
         Assert.Equal(option == "PhotoSync:MaxFileBytes" ? HttpStatusCode.RequestEntityTooLarge : HttpStatusCode.BadRequest, response.StatusCode);
         if (option == "PhotoSync:MaxFileBytes")
             Assert.Contains("FILE_TOO_LARGE", await response.Content.ReadAsStringAsync());
-        Assert.Empty(Directory.GetFiles(factory.StoragePath, "*", SearchOption.AllDirectories));
+        Assert.DoesNotContain(Directory.GetFiles(factory.StoragePath, "*", SearchOption.AllDirectories),
+            path => Path.GetFileName(path) is not ".photosync-storage-root");
     }
 }

@@ -10,6 +10,12 @@ public sealed class PhotoSyncOptions
 
     public string StorageRoot { get; set; } = "data";
 
+    // A pre-provisioned file on the persistent media mount. Startup and readiness
+    // deliberately fail when it is absent or changed so an empty fallback directory
+    // cannot silently accept originals after a mount failure.
+    public string StorageMountMarkerFileName { get; set; } = ".photosync-storage-root";
+    public string StorageMountMarkerValue { get; set; } = "photosync-storage-v1";
+
     // Optional read-only compatibility root for files written before storage
     // was moved to a different mount. New uploads always use StorageRoot.
     public string? LegacyStorageRoot { get; set; }

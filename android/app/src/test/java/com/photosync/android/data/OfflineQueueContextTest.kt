@@ -65,7 +65,7 @@ class OfflineQueueContextTest {
         context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
             .edit().remove("items").commit()
         val source = File(context.cacheDir, "shared-photo.jpg").apply { writeText("photo") }
-        val repository = OfflineFirstPhotoSyncRepository(context, FakePhotoSyncRepository())
+        val repository = OfflineFirstPhotoSyncRepository(context, FakePhotoSyncRepository(uploadSucceeds = false))
 
         assertTrue(repository.enqueueSharedMedia("folder-1", listOf(Uri.fromFile(source))))
 
@@ -80,7 +80,7 @@ class OfflineQueueContextTest {
         context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
             .edit().remove("items").commit()
         val source = File(context.cacheDir, "policy-snapshot.jpg").apply { writeText("photo") }
-        val delegate = FakePhotoSyncRepository()
+        val delegate = FakePhotoSyncRepository(uploadSucceeds = false)
         val repository = OfflineFirstPhotoSyncRepository(context, delegate)
 
         assertTrue(repository.uploadToFolder("folder-1", Uri.fromFile(source)))

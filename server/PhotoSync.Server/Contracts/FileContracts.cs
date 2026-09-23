@@ -24,6 +24,23 @@ public sealed record UploadFileResponse(
     [property: JsonPropertyName("has_preview")] bool HasPreview,
     [property: JsonPropertyName("uploaded_at")] DateTimeOffset UploadedAt);
 
+public sealed record ResumableUploadRequest(
+    [property: JsonPropertyName("album_id")] int? AlbumId,
+    [property: JsonPropertyName("device_uuid")] Guid? DeviceUuid,
+    [property: JsonPropertyName("album_name")] string? AlbumName,
+    [property: JsonPropertyName("original_name")] string OriginalName,
+    [property: JsonPropertyName("mime_type")] string MimeType,
+    [property: JsonPropertyName("size_bytes")] long SizeBytes,
+    [property: JsonPropertyName("sha256")] string Sha256,
+    [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
+    [property: JsonPropertyName("is_video")] bool IsVideo);
+
+public sealed record ResumableUploadStatusResponse(
+    [property: JsonPropertyName("upload_id")] Guid UploadId,
+    [property: JsonPropertyName("received_bytes")] long ReceivedBytes,
+    [property: JsonPropertyName("size_bytes")] long SizeBytes,
+    [property: JsonPropertyName("completed_file")] UploadFileResponse? CompletedFile = null);
+
 public sealed record FileListResponse(
     [property: JsonPropertyName("files")] IReadOnlyList<FileListItem> Files);
 

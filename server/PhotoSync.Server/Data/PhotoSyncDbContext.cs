@@ -15,6 +15,7 @@ public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> opti
     public DbSet<DeviceEntity> Devices => Set<DeviceEntity>();
     public DbSet<AlbumEntity> Albums => Set<AlbumEntity>();
     public DbSet<StoredFileEntity> Files => Set<StoredFileEntity>();
+    public DbSet<UploadSessionEntity> UploadSessions => Set<UploadSessionEntity>();
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<FamilyEntity> Families => Set<FamilyEntity>();
     public DbSet<FamilyMemberEntity> FamilyMembers => Set<FamilyMemberEntity>();
@@ -123,6 +124,16 @@ public sealed class PhotoSyncDbContext(DbContextOptions<PhotoSyncDbContext> opti
             entity.HasOne(x => x.Device).WithMany().HasForeignKey(x => x.DeviceId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.Album).WithMany(x => x.Files).HasForeignKey(x => x.AlbumId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.UploaderUser).WithMany().HasForeignKey(x => x.UploaderUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UploadSessionEntity>(entity =>
+        {
+            entity.ToTable("upload_sessions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OriginalName).HasMaxLength(260).IsRequired();
+            entity.Property(x => x.MimeType).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
+            entity.HasIndex(x => new { x.DeviceId, x.AlbumId, x.Sha256 }).IsUnique();
         });
     }
 }

@@ -24,13 +24,14 @@ class MediaStreamingTest {
         val expected = ZeroStream(length).use(::fingerprintMedia)
         assertEquals(length, expected.sizeBytes)
         val received = AtomicLong()
-        val transferEncoding = AtomicReference<String>()
+        val largestChunk = AtomicLong()
         val server = ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"))
         server.soTimeout = 30_000
         val serverError = AtomicReference<Throwable>()
         val responder = thread(isDaemon = true) {
             try {
-                repeat(2) { index -> server.accept().use { socket ->
+                // start + eight 4 MiB chunks + complete + download
+                repeat(11) { index -> server.accept().use { socket ->
                     socket.soTimeout = 30_000
                     val input = socket.getInputStream().buffered()
                     val output = socket.getOutputStream().buffered()
@@ -41,22 +42,29 @@ class MediaStreamingTest {
                         if (line.isEmpty()) break
                         headers[line.substringBefore(':').lowercase()] = line.substringAfter(':').trim()
                     }
-                    if (index == 0) {
-                        transferEncoding.set(headers["transfer-encoding"])
+                    val contentLength = headers["content-length"]?.toLongOrNull() ?: 0
+                    if (index in 1..8) {
+                        largestChunk.accumulateAndGet(contentLength, ::maxOf)
                         val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            var chunk = input.line().substringBefore(';').toInt(16)
-                            if (chunk == 0) { input.line(); break }
-                            while (chunk > 0) {
-                                val read = input.read(buffer, 0, minOf(chunk, buffer.size))
-                                check(read > 0)
-                                received.addAndGet(read.toLong())
-                                chunk -= read
-                            }
-                            input.line()
+                        var remaining = contentLength
+                        while (remaining > 0) {
+                            val read = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+                            check(read > 0)
+                            received.addAndGet(read.toLong())
+                            remaining -= read
                         }
+                        val response = """{"upload_id":"00000000-0000-0000-0000-000000000001","received_bytes":${received.get()},"size_bytes":$length}""".toByteArray()
+                        output.write("HTTP/1.1 200 OK\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                        output.write(response)
+                    } else if (index == 0) {
+                        input.skip(contentLength)
+                        val response = """{"upload_id":"00000000-0000-0000-0000-000000000001","received_bytes":0,"size_bytes":$length}""".toByteArray()
+                        output.write("HTTP/1.1 200 OK\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                        output.write(response)
+                    } else if (index == 9) {
+                        input.skip(contentLength)
                         val response = """{"server_file_id":1,"stored_name":"video.mp4","relative_path":"video.mp4"}""".toByteArray()
-                        output.write("HTTP/1.1 201 Created\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                        output.write("HTTP/1.1 200 OK\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray())
                         output.write(response)
                     } else {
                         output.write("HTTP/1.1 200 OK\r\nContent-Length: $length\r\nConnection: close\r\n\r\n".toByteArray())
@@ -73,8 +81,8 @@ class MediaStreamingTest {
             val result = api.uploadFileToAlbum(1, "video.mp4", "video/mp4", length, expected.sha256,
                 "2026-09-07T00:00:00Z", { ZeroStream(length) })
             assertEquals(1, result.serverFileId)
-            assertEquals("chunked", transferEncoding.get())
-            assertTrue(received.get() > length && received.get() < length + 4096)
+            assertEquals(length, received.get())
+            assertEquals(4L * 1024 * 1024, largestChunk.get())
             api.downloadFile(1, target)
             assertEquals(expected, target.inputStream().use(::fingerprintMedia))
             responder.join(5_000)

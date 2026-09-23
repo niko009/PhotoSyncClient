@@ -48,5 +48,5 @@ The server receives files exactly as uploads initiated from inside PhotoSync. Wi
 ## Known follow-ups
 
 - Real Android gallery albums backed by `MediaStore` are a separate feature. PhotoSync logical folders are not yet created as physical Android gallery albums.
-- Uploads restart from the beginning after a connection failure; server-side resumable upload is still a separate feature.
+- Uploads resume from the server-confirmed byte offset after a connection failure. The complete mobile-network/reboot matrix still needs physical-device validation.
 - Notifications require Android notification permission on Android 13 and newer.

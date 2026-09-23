@@ -12,8 +12,13 @@ ENV ASPNETCORE_HTTP_PORTS=8080 \
     PhotoSync__StorageRoot=/data \
     PhotoSync__DatabasePath=/data/system/photosync.db \
     ConnectionStrings__PhotoSync="Data Source=/data/system/photosync.db"
+# curl is used exclusively by Docker's local health check against /health.
 # A new named volume inherits these directories and their non-root ownership.
-RUN mkdir -p /data/system /data/_temp && chown -R "$APP_UID:$APP_UID" /data
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /data/system /data/_temp \
+    && chown -R "$APP_UID:$APP_UID" /data
 COPY --from=build /out ./
 USER $APP_UID
 EXPOSE 8080

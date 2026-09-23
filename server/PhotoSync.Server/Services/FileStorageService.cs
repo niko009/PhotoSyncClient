@@ -8,7 +8,7 @@ using PhotoSync.Server.Options;
 namespace PhotoSync.Server.Services;
 
 public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePathResolver pathResolver, ILogger<FileStorageService> logger,
-    UploadGuard guard, IOptions<PhotoSyncOptions> options, FolderAccessService access)
+    UploadGuard guard, IOptions<PhotoSyncOptions> options, FolderAccessService access, StorageIntegrityService storageIntegrity)
 {
     public async Task<StoreFileResult> StoreAsync(StoreFileCommand command, CancellationToken cancellationToken)
     {
@@ -21,7 +21,7 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
 
     private async Task<StoreFileResult> StoreWithinLimitAsync(StoreFileCommand command, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(pathResolver.StorageRoot);
+        await storageIntegrity.EnsureReadyAsync(cancellationToken);
         Directory.CreateDirectory(pathResolver.TempRoot);
 
         var duplicate = await dbContext.Files.IgnoreQueryFilters().AsNoTracking()

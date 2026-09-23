@@ -40,6 +40,23 @@ public static class DeviceSecuritySchema
             CREATE UNIQUE INDEX IF NOT EXISTS IX_files_DeviceId_AlbumId_Sha256
                 ON files (DeviceId, AlbumId, Sha256);
             CREATE INDEX IF NOT EXISTS IX_devices_GoogleSubject ON devices (GoogleSubject);
+            CREATE TABLE IF NOT EXISTS upload_sessions (
+                Id TEXT NOT NULL PRIMARY KEY,
+                DeviceId INTEGER NOT NULL,
+                AlbumId INTEGER NOT NULL,
+                OriginalName TEXT NOT NULL,
+                MimeType TEXT NOT NULL,
+                SizeBytes INTEGER NOT NULL,
+                Sha256 TEXT NOT NULL,
+                CreatedAtUtc TEXT NOT NULL,
+                IsVideo INTEGER NOT NULL,
+                ReceivedBytes INTEGER NOT NULL,
+                StoredFileId INTEGER NULL,
+                StartedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_upload_sessions_DeviceId_AlbumId_Sha256
+                ON upload_sessions (DeviceId, AlbumId, Sha256);
             """);
         await transaction.CommitAsync();
     }

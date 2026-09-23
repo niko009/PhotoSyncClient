@@ -20,6 +20,8 @@ public sealed class TestPhotoSyncFactory : WebApplicationFactory<Program>, IAsyn
         _googleVerifier = googleVerifier;
         _rootPath = Path.Combine(Path.GetTempPath(), "photosync-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_rootPath);
+        Directory.CreateDirectory(StoragePath);
+        File.WriteAllText(Path.Combine(StoragePath, ".photosync-storage-root"), "photosync-storage-v1");
     }
 
     public string RootPath => _rootPath;
