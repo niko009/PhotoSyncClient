@@ -13,7 +13,9 @@ public sealed class ResumableUploadService(PhotoSyncDbContext db, StoragePathRes
     public async Task<(UploadSessionEntity? Session, StoredFileEntity? Existing, string? Error)> StartAsync(
         DeviceEntity device, AlbumEntity album, ResumableUploadRequest request, CancellationToken ct)
     {
-        if (request.SizeBytes < 0 || request.SizeBytes > options.Value.MaxFileBytes ||
+        if (request.SizeBytes > options.Value.MaxFileBytes)
+            return (null, null, "FILE_TOO_LARGE");
+        if (request.SizeBytes < 0 ||
             string.IsNullOrWhiteSpace(request.OriginalName) || string.IsNullOrWhiteSpace(request.MimeType) ||
             request.Sha256.Length != 64 || !request.Sha256.All(Uri.IsHexDigit))
             return (null, null, "INVALID_UPLOAD_METADATA");
@@ -23,9 +25,13 @@ public sealed class ResumableUploadService(PhotoSyncDbContext db, StoragePathRes
         {
             var existing = await db.Files.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(
                 x => x.DeviceId == device.Id && x.AlbumId == album.Id && x.Sha256 == hash && x.ArchivedAtUtc == null, ct);
-            if (existing is not null) return (null, existing, null);
+            if (existing is not null)
+                return await StoredFileIntegrity.VerifyAsync(existing, paths, ct)
+                    ? (null, existing, null)
+                    : (null, null, "STORED_FILE_DAMAGED");
             var session = await db.UploadSessions.SingleOrDefaultAsync(x => x.DeviceId == device.Id && x.AlbumId == album.Id && x.Sha256 == hash, ct);
-            if (session is not null) return (session, null, null);
+            if (session is not null)
+                return session.SizeBytes == request.SizeBytes ? (session, null, null) : (null, null, "UPLOAD_METADATA_MISMATCH");
             session = new UploadSessionEntity { Id = Guid.NewGuid(), DeviceId = device.Id, AlbumId = album.Id,
                 OriginalName = request.OriginalName.Trim(), MimeType = request.MimeType.Trim(), SizeBytes = request.SizeBytes,
                 Sha256 = hash, CreatedAtUtc = request.CreatedAt, IsVideo = request.IsVideo,
@@ -39,7 +45,7 @@ public sealed class ResumableUploadService(PhotoSyncDbContext db, StoragePathRes
 
     public string TempPath(Guid id) => Path.Combine(paths.TempRoot, $"resume-{id:N}.part");
 
-    public async Task<(UploadSessionEntity? Session, string? Error)> AppendAsync(UploadSessionEntity session, long offset, Stream content, CancellationToken ct)
+    public async Task<(UploadSessionEntity? Session, string? Error)> AppendAsync(UploadSessionEntity session, long offset, Stream content, long? expectedLength, CancellationToken ct)
     {
         if (session.StoredFileId is not null) return (session, null);
         if (offset != session.ReceivedBytes) return (session, "UPLOAD_OFFSET_MISMATCH");
@@ -51,10 +57,37 @@ public sealed class ResumableUploadService(PhotoSyncDbContext db, StoragePathRes
             Directory.CreateDirectory(paths.TempRoot);
             var path = TempPath(session.Id);
             await using var output = new FileStream(path, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous);
-            if (output.Length != offset) return (session, "UPLOAD_OFFSET_MISMATCH");
+            // A previous connection can die after writing bytes but before its
+            // durable offset is committed. Discard only those uncommitted bytes.
+            if (output.Length < offset) return (session, "UPLOAD_OFFSET_MISMATCH");
+            if (output.Length > offset) output.SetLength(offset);
             output.Seek(offset, SeekOrigin.Begin);
             var buffer = new byte[81920]; long written = 0;
-            while (true) { var read = await content.ReadAsync(buffer, ct); if (read == 0) break; if (offset + written + read > session.SizeBytes) return (session, "UPLOAD_EXCEEDS_DECLARED_SIZE"); await output.WriteAsync(buffer.AsMemory(0, read), ct); written += read; }
+            try
+            {
+                while (true)
+                {
+                    var read = await content.ReadAsync(buffer, ct);
+                    if (read == 0) break;
+                    if (offset + written + read > session.SizeBytes)
+                    {
+                        output.SetLength(offset);
+                        return (session, "UPLOAD_EXCEEDS_DECLARED_SIZE");
+                    }
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                    written += read;
+                }
+                if (written == 0 || (expectedLength is not null && written != expectedLength))
+                {
+                    output.SetLength(offset);
+                    return (session, "UPLOAD_INTERRUPTED");
+                }
+            }
+            catch
+            {
+                output.SetLength(offset);
+                throw;
+            }
             await output.FlushAsync(ct); output.Flush(true);
             session.ReceivedBytes = offset + written; session.UpdatedAtUtc = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);

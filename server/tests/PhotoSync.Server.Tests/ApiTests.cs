@@ -216,6 +216,88 @@ public sealed class ApiTests
         Assert.Equal(bytes, await client.GetByteArrayAsync($"/api/files/{result.ServerFileId}/download"));
     }
 
+    [Fact]
+    public async Task ResumableUpload_DiscardsUncommittedTailAndRetriesWithoutDuplicate()
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        using var client = factory.CreateClient();
+        var uuid = Guid.NewGuid();
+        await RegisterDeviceAsync(client, uuid, "Retry phone");
+        var album = (await (await client.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(uuid, "Retry")))
+            .Content.ReadFromJsonAsync<CreateAlbumResponse>())!;
+        var bytes = Encoding.UTF8.GetBytes("verified media after a disconnected chunk");
+        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        var metadata = new ResumableUploadRequest(album.AlbumId, null, null, "clip.mp4", "video/mp4",
+            bytes.Length, hash, DateTimeOffset.UtcNow, true);
+        var start = (await (await client.PostAsJsonAsync("/api/files/uploads", metadata)).Content
+            .ReadFromJsonAsync<ResumableUploadStatusResponse>())!;
+        using (var first = new ByteArrayContent(bytes[..8]))
+            (await client.PutAsync($"/api/files/uploads/{start.UploadId}?offset=0", first)).EnsureSuccessStatusCode();
+        var temp = Path.Combine(factory.StoragePath, "_temp", $"resume-{start.UploadId:N}.part");
+        await using (var tail = new FileStream(temp, FileMode.Append, FileAccess.Write))
+            await tail.WriteAsync(new byte[] { 1, 2, 3 }); // bytes written before a lost connection/DB commit
+        using (var rest = new ByteArrayContent(bytes[8..]))
+            (await client.PutAsync($"/api/files/uploads/{start.UploadId}?offset=8", rest)).EnsureSuccessStatusCode();
+        var completed = (await (await client.PostAsJsonAsync($"/api/files/uploads/{start.UploadId}/complete", new { }))
+            .Content.ReadFromJsonAsync<UploadFileResponse>())!;
+        Assert.Equal(bytes, await client.GetByteArrayAsync($"/api/files/{completed.ServerFileId}/download"));
+        var duplicate = (await (await client.PostAsJsonAsync("/api/files/uploads", metadata)).Content
+            .ReadFromJsonAsync<ResumableUploadStatusResponse>())!;
+        Assert.Equal(completed.ServerFileId, duplicate.CompletedFile?.ServerFileId);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>();
+        Assert.Equal(1, await db.Files.CountAsync(x => x.Sha256 == hash));
+    }
+
+    [Fact]
+    public async Task MultipartUpload_RejectsTruncatedBodyWithoutCreatingFile()
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        using var client = factory.CreateClient();
+        var uuid = Guid.NewGuid();
+        await RegisterDeviceAsync(client, uuid, "Multipart phone");
+        (await client.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(uuid, "Broken"))).EnsureSuccessStatusCode();
+        using var body = new ByteArrayContent(Encoding.UTF8.GetBytes(
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"bad.jpg\"\r\n\r\npartial"));
+        body.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("multipart/form-data; boundary=test-boundary");
+        var response = await client.PostAsync("/api/files/upload", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await using var scope = factory.Services.CreateAsyncScope();
+        Assert.Equal(0, await scope.ServiceProvider.GetRequiredService<PhotoSyncDbContext>().Files.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(8 * 1024 * 1024, "image/x-adobe-dng", false)]
+    [InlineData(32 * 1024 * 1024, "video/mp4", true)]
+    public async Task ResumableUpload_LargeMediaStreamsAndVerifiesHash(int size, string mime, bool video)
+    {
+        await using var factory = new TestPhotoSyncFactory();
+        using var client = factory.CreateClient();
+        var uuid = Guid.NewGuid();
+        await RegisterDeviceAsync(client, uuid, "Large media phone");
+        var album = (await (await client.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(uuid, "Large")))
+            .Content.ReadFromJsonAsync<CreateAlbumResponse>())!;
+        var bytes = new byte[size];
+        RandomNumberGenerator.Fill(bytes);
+        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        var metadata = new ResumableUploadRequest(album.AlbumId, null, null, video ? "long.mp4" : "raw.dng",
+            mime, size, hash, DateTimeOffset.UtcNow, video);
+        var start = (await (await client.PostAsJsonAsync("/api/files/uploads", metadata)).Content
+            .ReadFromJsonAsync<ResumableUploadStatusResponse>())!;
+        for (var offset = 0; offset < size; offset += 4 * 1024 * 1024)
+        {
+            using var chunk = new ByteArrayContent(bytes, offset, Math.Min(4 * 1024 * 1024, size - offset));
+            (await client.PutAsync($"/api/files/uploads/{start.UploadId}?offset={offset}", chunk)).EnsureSuccessStatusCode();
+        }
+        var response = await client.PostAsJsonAsync($"/api/files/uploads/{start.UploadId}/complete", new { });
+        response.EnsureSuccessStatusCode();
+        var completed = (await response.Content.ReadFromJsonAsync<UploadFileResponse>())!;
+        var storedPath = Path.Combine(factory.StoragePath, completed.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+        Assert.Equal(size, new FileInfo(storedPath).Length);
+        await using var stored = File.OpenRead(storedPath);
+        Assert.Equal(hash, Convert.ToHexString(await SHA256.HashDataAsync(stored)).ToLowerInvariant());
+    }
+
     private static async Task<int> RegisterDeviceAsync(HttpClient client, Guid deviceUuid, string deviceName)
     {
         client.DefaultRequestHeaders.Remove("X-PhotoSync-Device");

@@ -87,4 +87,12 @@
         <item quantity="one">%1$d item</item>
         <item quantity="other">%1$d items</item>
     </plurals>
+    <string name="upload_error_unavailable">No connection to the server</string>
+    <string name="upload_error_timeout">Upload timed out. We will retry automatically.</string>
+    <string name="upload_error_interrupted">Upload interrupted. We will retry automatically.</string>
+    <string name="upload_error_large">File is too large</string>
+    <string name="upload_error_auth">Device authorization failed</string>
+    <string name="upload_error_server">Server error. We will retry automatically.</string>
+    <string name="upload_error_local">Local file is missing or unreadable</string>
+    <string name="upload_error_network">Temporary network failure. We will retry automatically.</string>
 </resources>

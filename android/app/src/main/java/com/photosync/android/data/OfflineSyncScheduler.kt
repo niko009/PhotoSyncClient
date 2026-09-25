@@ -53,8 +53,10 @@ class OfflineSyncWorker(
             repository.refresh()
             val stats = repository.observeStats().first()
             val pendingFolders = repository.observeFolders().first().any { it.ownedByMe && it.remoteAlbumId == null }
+            // Terminal file/auth failures need user action; do not wake forever
+            // just because they remain visible in the Failed count.
             if (stats.connectionStatus == ConnectionStatus.Online && stats.pendingPhotos == 0 &&
-                stats.failedPhotos == 0 && !pendingFolders) Result.success() else Result.retry()
+                !pendingFolders) Result.success() else Result.retry()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

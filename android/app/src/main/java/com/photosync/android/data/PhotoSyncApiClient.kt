@@ -12,6 +12,8 @@ import com.photosync.android.domain.model.GoogleAccount
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
+import java.io.IOException
+import java.io.FileNotFoundException
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
 import java.io.OutputStream
@@ -26,9 +28,10 @@ class PhotoSyncApiException(
     val retryAfterMillis: Long? = null,
     message: String,
 ) : IllegalStateException(message) {
-    val isTransient: Boolean get() = statusCode == 408 || statusCode == 429 || statusCode >= 500
-    val isNetworkOrServerFailure: Boolean get() = statusCode == 408 || statusCode >= 500
+    val isTransient: Boolean get() = statusCode == 408 || statusCode == 429 || statusCode >= 500 || code == "UPLOAD_INTERRUPTED"
 }
+
+class LocalFileUnreadableException(cause: Throwable) : IOException("Local file is missing or unreadable", cause)
 
 class PhotoSyncApiClient(
     private var baseUrl: String = DEFAULT_BASE_URL,
@@ -237,6 +240,33 @@ class PhotoSyncApiClient(
     )
 
     private fun uploadFileInternal(
+        albumId: Int?, deviceUuid: String?, albumName: String?, originalName: String,
+        mimeType: String, sizeBytes: Long, sha256: String, createdAtIso: String,
+        openFile: () -> InputStream,
+    ): FileUploadResultDto {
+        var retry = 0
+        while (true) {
+            try {
+                return uploadFileAttempt(albumId, deviceUuid, albumName, originalName,
+                    mimeType, sizeBytes, sha256, createdAtIso, openFile)
+            } catch (error: Exception) {
+                val transient = when (error) {
+                    is PhotoSyncApiException -> error.isTransient
+                    is LocalFileUnreadableException -> false
+                    is FileNotFoundException -> false
+                    is IOException -> true
+                    else -> false
+                }
+                if (!transient || retry >= 2) throw error
+                val delayMillis = (error as? PhotoSyncApiException)?.retryAfterMillis
+                    ?.coerceIn(1_000, 30_000) ?: (1_000L shl retry)
+                Thread.sleep(delayMillis)
+                retry++
+            }
+        }
+    }
+
+    private fun uploadFileAttempt(
         albumId: Int?,
         deviceUuid: String?,
         albumName: String?,
@@ -269,6 +299,7 @@ class PhotoSyncApiClient(
             val chunkSize = minOf(RESUMABLE_CHUNK_BYTES.toLong(), sizeBytes - offset).toInt()
             val connection = openConnection("/api/files/uploads/$uploadId?offset=$offset", "PUT")
             connection.doOutput = true
+            connection.connectTimeout = 30_000
             connection.readTimeout = 120_000
             connection.setRequestProperty("Content-Type", "application/octet-stream")
             connection.setFixedLengthStreamingMode(chunkSize)

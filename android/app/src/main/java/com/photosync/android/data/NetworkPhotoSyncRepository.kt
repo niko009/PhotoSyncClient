@@ -85,7 +85,7 @@ class NetworkPhotoSyncRepository(
         mimeType: String,
         cleanupPolicy: PhotoCleanupPolicy?,
     ) = operationMutex.withLock {
-        uploadToFolderInternal(folderId, uploadUri, sourceUri, displayName, mimeType, cleanupPolicy)
+        uploadToFolderInternal(folderId, uploadUri, sourceUri, displayName, mimeType, cleanupPolicy, propagateFailure = true)
     }
     override suspend fun deletePhoto(folderId: String, photoId: String) = operationMutex.withLock { deletePhotoInternal(folderId, photoId) }
     override suspend fun signInWithGoogle(idToken: String) = operationMutex.withLock {
@@ -297,7 +297,7 @@ class NetworkPhotoSyncRepository(
                 // A bad file (413/hash mismatch/authorization) is not a server
                 // outage. Preserve the last known online state so the UI can
                 // report the file failure truthfully and continue the queue.
-                if (error !is PhotoSyncApiException || error.isNetworkOrServerFailure) {
+                if (error is java.net.UnknownHostException || error is java.net.ConnectException) {
                     stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Offline)
                 }
             }
@@ -379,14 +379,23 @@ class NetworkPhotoSyncRepository(
         displayName: String?,
         mimeTypeOverride: String?,
         cleanupPolicy: PhotoCleanupPolicy? = null,
+        propagateFailure: Boolean = false,
     ): Boolean {
         var attemptedPhotoId: String? = null
         return runCatching {
             withContext(Dispatchers.IO) {
                 val folder = folderDetails.value[folderId] ?: error("Upload folder was not found.")
                 check(folder.canContribute) { "This shared album is view-only." }
-                val openFile = { appContext.contentResolver.openInputStream(uploadUri)
-                    ?: error("Shared media could not be opened.") }
+                val openFile = {
+                    try {
+                        appContext.contentResolver.openInputStream(uploadUri)
+                            ?: throw java.io.FileNotFoundException("Selected media could not be opened")
+                    } catch (error: java.io.IOException) {
+                        throw LocalFileUnreadableException(error)
+                    } catch (error: SecurityException) {
+                        throw LocalFileUnreadableException(error)
+                    }
+                }
                 val fingerprint = openFile().use { fingerprintMedia(it) }
                 val originalName = displayName
                     ?: resolveDisplayName(sourceUri)
@@ -467,8 +476,10 @@ class NetworkPhotoSyncRepository(
                     }
                 }
                 restoreLocalState()
-                stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Offline)
+                if (error is java.net.UnknownHostException || error is java.net.ConnectException)
+                    stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Offline)
                 Log.e(TAG, "Upload failed for folderId=$folderId", error)
+                if (propagateFailure) throw error
             }
             .isSuccess
     }

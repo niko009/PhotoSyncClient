@@ -89,4 +89,12 @@
         <item quantity="many">%1$d файлов</item>
         <item quantity="other">%1$d файла</item>
     </plurals>
+    <string name="upload_error_unavailable">Нет соединения с сервером</string>
+    <string name="upload_error_timeout">Время загрузки истекло. Повторим автоматически.</string>
+    <string name="upload_error_interrupted">Загрузка прервана. Повторим автоматически.</string>
+    <string name="upload_error_large">Файл слишком большой</string>
+    <string name="upload_error_auth">Ошибка авторизации устройства</string>
+    <string name="upload_error_server">Ошибка сервера. Повторим автоматически.</string>
+    <string name="upload_error_local">Локальный файл отсутствует или не читается</string>
+    <string name="upload_error_network">Временный сбой сети. Повторим автоматически.</string>
 </resources>

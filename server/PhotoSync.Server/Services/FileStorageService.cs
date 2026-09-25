@@ -106,6 +106,12 @@ public sealed class FileStorageService(PhotoSyncDbContext dbContext, StoragePath
             await dbContext.SaveChangesAsync(cancellationToken);
             return StoreFileResult.Stored(entity);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("Upload storage cancelled: device {DeviceId}, album {AlbumId}, name {OriginalName}, expected bytes {ExpectedBytes}",
+                command.Device.Id, command.Album.Id, command.OriginalName, command.SizeBytes);
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to store uploaded file.");

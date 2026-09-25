@@ -64,18 +64,48 @@ public static class FileEndpoints
     }
 
     private static async Task<IResult> UploadAsync(HttpRequest request, PhotoSyncDbContext db,
-        FileStorageService storageService, FolderAccessService access, CancellationToken ct)
+        FileStorageService storageService, FolderAccessService access, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         if (!request.HasFormContentType)
             return Results.BadRequest(ApiProblems.Validation("INVALID_CONTENT_TYPE", "multipart/form-data is required."));
 
+        var logger = loggerFactory.CreateLogger("PhotoSync.Upload");
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        // FormFeature buffers multipart sections to disk. Count transport bytes so
+        // an incomplete request can be distinguished from a configured limit.
+        var countedBody = new CountingReadStream(request.Body);
+        request.Body = countedBody;
         IFormCollection form;
         try { form = await request.ReadFormAsync(ct); }
-        catch (InvalidDataException)
+        catch (InvalidDataException ex) when (ex.Message.Contains("limit", StringComparison.OrdinalIgnoreCase))
         {
+            logger.LogWarning("Upload rejected: request {TraceId}, expected transport bytes {ExpectedBytes}, received {ReceivedBytes}, category limit",
+                request.HttpContext.TraceIdentifier, request.ContentLength, countedBody.BytesRead);
             return Results.Problem(statusCode: StatusCodes.Status413PayloadTooLarge, title: "FILE_TOO_LARGE",
                 detail: "The upload exceeds the configured file size limit.",
                 extensions: new Dictionary<string, object?> { ["code"] = "FILE_TOO_LARGE" });
+        }
+        catch (InvalidDataException ex)
+        {
+            logger.LogWarning(ex, "Invalid multipart upload: request {TraceId}, expected transport bytes {ExpectedBytes}, received {ReceivedBytes}, category malformed",
+                request.HttpContext.TraceIdentifier, request.ContentLength, countedBody.BytesRead);
+            return Results.BadRequest(ApiProblems.Validation("INVALID_MULTIPART", "The multipart upload is malformed or incomplete."));
+        }
+        catch (IOException ex)
+        {
+            logger.LogWarning(ex, "Upload interrupted: request {TraceId}, device {DeviceId}, expected transport bytes {ExpectedBytes}, received {ReceivedBytes}, cancelled {Cancelled}, category transport",
+                request.HttpContext.TraceIdentifier, request.Headers["X-PhotoSync-Device"].ToString(), request.ContentLength,
+                countedBody.BytesRead, request.HttpContext.RequestAborted.IsCancellationRequested);
+            if (ct.IsCancellationRequested) return Results.StatusCode(499);
+            return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "UPLOAD_INTERRUPTED",
+                detail: "The multipart upload ended before it was complete. Retry the file.",
+                extensions: new Dictionary<string, object?> { ["code"] = "UPLOAD_INTERRUPTED" });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Upload client disconnected: request {TraceId}, expected transport bytes {ExpectedBytes}, received {ReceivedBytes}, cancelled true",
+                request.HttpContext.TraceIdentifier, request.ContentLength, countedBody.BytesRead);
+            return Results.StatusCode(499);
         }
         var file = form.Files.GetFile("file");
         if (file is null) return Results.BadRequest(ApiProblems.Validation("FILE_REQUIRED", "Multipart field 'file' is required."));
@@ -123,6 +153,11 @@ public static class FileEndpoints
         await using var fileStream = file.OpenReadStream();
         var result = await storageService.StoreAsync(new StoreFileCommand(device, album, originalName, mimeType, sizeBytes,
             sha256, createdAt, width, height, durationMs, isVideo, fileStream), ct);
+        logger.LogInformation("Upload {Result}: request {TraceId}, device {DeviceId}, album {AlbumId}, name {OriginalName}, expected file bytes {ExpectedBytes}, received transport bytes {ReceivedBytes}, mime {MimeType}, duration {DurationMs}ms, category {Category}",
+            result.AlreadyExists ? "already_exists" : result.Success ? "stored" : "rejected",
+            request.HttpContext.TraceIdentifier, device.Id, album.Id, originalName, sizeBytes,
+            countedBody.BytesRead, mimeType, started.ElapsedMilliseconds,
+            result.IsFileTooLarge ? "limit" : result.IsValidationError ? "validation" : result.IsForbidden ? "authorization" : "none");
 
         if (result.IsForbidden) return Results.StatusCode(StatusCodes.Status403Forbidden);
         if (result.AlreadyExists) return Results.Ok(ToUploadResponse(result.File!));
@@ -145,9 +180,45 @@ public static class FileEndpoints
         var target = await ResolveUploadTargetAsync(request.AlbumId, request.DeviceUuid, request.AlbumName, db, access, ct);
         if (target is null) return Results.NotFound(ApiProblems.NotFound("UPLOAD_TARGET_NOT_FOUND", "Upload target was not found."));
         var (session, existing, error) = await uploads.StartAsync(target.Value.Device, target.Value.Album, request, ct);
+        if (error == "FILE_TOO_LARGE")
+            return Results.Problem(statusCode: StatusCodes.Status413PayloadTooLarge, title: error,
+                detail: "The file exceeds the configured upload limit.",
+                extensions: new Dictionary<string, object?> { ["code"] = error });
         if (error is not null) return Results.BadRequest(ApiProblems.Validation(error, "Invalid resumable upload metadata."));
         if (existing is not null) return Results.Ok(new ResumableUploadStatusResponse(Guid.Empty, existing.SizeBytes, existing.SizeBytes, ToUploadResponse(existing)));
         return Results.Ok(ToStatus(session!));
+    }
+
+    private sealed class CountingReadStream(Stream inner) : Stream
+    {
+        public long BytesRead { get; private set; }
+        public override bool CanRead => inner.CanRead;
+        public override bool CanSeek => inner.CanSeek;
+        public override bool CanWrite => false;
+        public override long Length => inner.Length;
+        public override long Position { get => inner.Position; set => inner.Position = value; }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = inner.Read(buffer, offset, count);
+            BytesRead += read;
+            return read;
+        }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await inner.ReadAsync(buffer, cancellationToken);
+            BytesRead += read;
+            return read;
+        }
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var read = await inner.ReadAsync(buffer, offset, count, cancellationToken);
+            BytesRead += read;
+            return read;
+        }
+        public override void Flush() => inner.Flush();
+        public override long Seek(long offset, SeekOrigin origin) => inner.Seek(offset, origin);
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static async Task<IResult> GetResumableStatusAsync(Guid uploadId, PhotoSyncDbContext db,
@@ -159,23 +230,52 @@ public static class FileEndpoints
     }
 
     private static async Task<IResult> AppendResumableAsync(Guid uploadId, long? offset, HttpRequest request,
-        PhotoSyncDbContext db, FolderAccessService access, ResumableUploadService uploads, CancellationToken ct)
+        PhotoSyncDbContext db, FolderAccessService access, ResumableUploadService uploads, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         if (offset is null || offset < 0) return Results.BadRequest(ApiProblems.Validation("INVALID_UPLOAD_OFFSET", "An upload offset is required."));
         var session = await db.UploadSessions.SingleOrDefaultAsync(x => x.Id == uploadId, ct);
         if (session is null || !await CanAccessSessionAsync(session, db, access, ct)) return Results.NotFound();
-        var (updated, error) = await uploads.AppendAsync(session, offset.Value, request.Body, ct);
+        var countedBody = new CountingReadStream(request.Body);
+        UploadSessionEntity? updated;
+        string? error;
+        try { (updated, error) = await uploads.AppendAsync(session, offset.Value, countedBody, request.ContentLength, ct); }
+        catch (IOException ex)
+        {
+            loggerFactory.CreateLogger("PhotoSync.Upload").LogWarning(ex,
+                "Upload chunk interrupted: request {TraceId}, device {DeviceId}, album {AlbumId}, upload {UploadId}, offset {Offset}, expected bytes {ExpectedBytes}, received bytes {ReceivedBytes}, cancelled {Cancelled}, category transport",
+                request.HttpContext.TraceIdentifier, session.DeviceId, session.AlbumId, uploadId, offset,
+                request.ContentLength, countedBody.BytesRead, request.HttpContext.RequestAborted.IsCancellationRequested);
+            if (ct.IsCancellationRequested) return Results.StatusCode(499);
+            return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "UPLOAD_INTERRUPTED",
+                detail: "The upload chunk ended before it was complete. Retry from the reported offset.",
+                extensions: new Dictionary<string, object?> { ["code"] = "UPLOAD_INTERRUPTED" });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            loggerFactory.CreateLogger("PhotoSync.Upload").LogWarning(
+                "Upload chunk client disconnected: request {TraceId}, upload {UploadId}, offset {Offset}, expected bytes {ExpectedBytes}, received bytes {ReceivedBytes}, cancelled true",
+                request.HttpContext.TraceIdentifier, uploadId, offset, request.ContentLength, countedBody.BytesRead);
+            return Results.StatusCode(499);
+        }
         if (error == "UPLOAD_OFFSET_MISMATCH") return Results.Conflict(new { code = error, received_bytes = updated!.ReceivedBytes });
+        if (error == "UPLOAD_INTERRUPTED") return Results.BadRequest(ApiProblems.Validation(error, "The upload chunk is incomplete. Retry it."));
         if (error is not null) return Results.BadRequest(ApiProblems.Validation(error, "Invalid upload chunk."));
         return Results.Ok(ToStatus(updated!));
     }
 
-    private static async Task<IResult> CompleteResumableAsync(Guid uploadId, PhotoSyncDbContext db,
-        FolderAccessService access, ResumableUploadService uploads, CancellationToken ct)
+    private static async Task<IResult> CompleteResumableAsync(Guid uploadId, HttpRequest request, PhotoSyncDbContext db,
+        FolderAccessService access, ResumableUploadService uploads, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var session = await db.UploadSessions.SingleOrDefaultAsync(x => x.Id == uploadId, ct);
         if (session is null || !await CanAccessSessionAsync(session, db, access, ct)) return Results.NotFound();
         var (file, error) = await uploads.CompleteAsync(session, ct);
+        loggerFactory.CreateLogger("PhotoSync.Upload").LogInformation(
+            "Resumable upload {Result}: request {TraceId}, upload {UploadId}, device {DeviceId}, album {AlbumId}, name {OriginalName}, expected bytes {ExpectedBytes}, received bytes {ReceivedBytes}, mime {MimeType}, duration {DurationMs}ms, category {Category}",
+            error is null ? "stored" : "rejected", request.HttpContext.TraceIdentifier,
+            uploadId, session.DeviceId, session.AlbumId, session.OriginalName, session.SizeBytes,
+            session.ReceivedBytes, session.MimeType,
+            (long)(DateTimeOffset.UtcNow - session.StartedAtUtc).TotalMilliseconds,
+            error ?? "none");
         if (error == "UPLOAD_INCOMPLETE") return Results.Conflict(new { code = error, received_bytes = session.ReceivedBytes, size_bytes = session.SizeBytes });
         if (error is not null) return Results.BadRequest(ApiProblems.Validation(error, "Could not complete upload."));
         return Results.Ok(ToUploadResponse(file!));

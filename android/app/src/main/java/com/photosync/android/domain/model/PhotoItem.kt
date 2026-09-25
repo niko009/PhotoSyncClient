@@ -11,6 +11,7 @@ data class PhotoItem(
     val serverFileId: Int? = null,
     val serverRelativePath: String? = null,
     val mimeType: String? = null,
+    val failureCode: String? = null,
 )
 
 fun PhotoItem.toUriOrNull(): Uri? = localUri?.let(Uri::parse)

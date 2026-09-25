@@ -246,13 +246,32 @@ class OfflineFirstPhotoSyncRepository(
         Log.e(TAG, "Queued sync failed for ${item.title}", error)
         // Do not retry deterministic 4xx failures forever. 429/5xx and network
         // failures remain queued; WorkManager applies persistent exponential backoff.
-        if (error is PhotoSyncApiException && !error.isTransient) {
-            val updated = queue.value.map {
-                if (it.id == item.id) it.copy(terminalFailure = true, errorCode = error.code ?: "UPLOAD_FAILED") else it
+        val code = when (error) {
+            is PhotoSyncApiException -> when {
+                error.statusCode == 413 || error.code == "FILE_TOO_LARGE" -> "FILE_TOO_LARGE"
+                error.statusCode == 401 || error.statusCode == 403 -> "UNAUTHORIZED"
+                error.code == "UPLOAD_INTERRUPTED" -> "UPLOAD_INTERRUPTED"
+                error.statusCode == 408 -> "UPLOAD_TIMEOUT"
+                error.statusCode == 429 -> "TEMPORARY_NETWORK_FAILURE"
+                error.statusCode >= 500 -> "SERVER_ERROR"
+                else -> error.code ?: "UPLOAD_FAILED"
             }
-            persistQueue(updated)
-            queue.value = updated
+            is java.net.SocketTimeoutException -> "UPLOAD_TIMEOUT"
+            is java.net.UnknownHostException, is java.net.ConnectException -> "SERVER_UNAVAILABLE"
+            is java.net.SocketException -> "TEMPORARY_NETWORK_FAILURE"
+            is LocalFileUnreadableException, is java.io.FileNotFoundException -> "LOCAL_FILE_UNREADABLE"
+            is java.io.IOException -> "UPLOAD_INTERRUPTED"
+            else -> "UPLOAD_FAILED"
         }
+        val updated = queue.value.map {
+            if (it.id == item.id) it.copy(
+                terminalFailure = error is PhotoSyncApiException && !error.isTransient ||
+                    error is LocalFileUnreadableException || error is java.io.FileNotFoundException,
+                errorCode = code,
+            ) else it
+        }
+        persistQueue(updated)
+        queue.value = updated
         notifyShareFailure(item)
     }
 
@@ -468,6 +487,7 @@ class OfflineFirstPhotoSyncRepository(
             status = if (terminalFailure) PhotoSyncStatus.Failed else PhotoSyncStatus.Pending,
             localUri = sourceUri,
             mimeType = mimeType,
+            failureCode = errorCode,
         )
 
         fun matches(photo: PhotoItem): Boolean =

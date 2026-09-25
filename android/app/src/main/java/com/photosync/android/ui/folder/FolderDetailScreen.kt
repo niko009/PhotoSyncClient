@@ -459,7 +459,19 @@ fun FolderDetailScreen(
                             fallbackPath = photo.thumbnailPath,
                         )
                         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(photo.status.statusText())
+                            Text(photo.failureCode?.let { code ->
+                                stringResource(when (code) {
+                                    "SERVER_UNAVAILABLE" -> R.string.upload_error_unavailable
+                                    "UPLOAD_TIMEOUT" -> R.string.upload_error_timeout
+                                    "UPLOAD_INTERRUPTED" -> R.string.upload_error_interrupted
+                                    "FILE_TOO_LARGE" -> R.string.upload_error_large
+                                    "UNAUTHORIZED" -> R.string.upload_error_auth
+                                    "SERVER_ERROR" -> R.string.upload_error_server
+                                    "LOCAL_FILE_UNREADABLE" -> R.string.upload_error_local
+                                    "TEMPORARY_NETWORK_FAILURE" -> R.string.upload_error_network
+                                    else -> R.string.failed
+                                })
+                            } ?: photo.status.statusText())
                             if (photo.localUri == null) {
                                 Text(stringResource(R.string.album_preview_hint), style = MaterialTheme.typography.bodySmall)
                             }

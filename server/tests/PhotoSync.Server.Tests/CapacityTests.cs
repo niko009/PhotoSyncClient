@@ -60,4 +60,20 @@ public sealed class CapacityTests
         Assert.DoesNotContain(Directory.GetFiles(factory.StoragePath, "*", SearchOption.AllDirectories),
             path => Path.GetFileName(path) is not ".photosync-storage-root");
     }
+
+    [Fact]
+    public async Task ResumableStartOverConfiguredLimitReturns413()
+    {
+        await using var factory = new TestPhotoSyncFactory(new Dictionary<string, string?> { ["PhotoSync:MaxFileBytes"] = "4" });
+        using var client = factory.CreateClient();
+        var uuid = Guid.NewGuid();
+        (await Register(client, uuid)).EnsureSuccessStatusCode();
+        var album = (await (await client.PostAsJsonAsync("/api/albums", new CreateAlbumRequest(uuid, "Test")))
+            .Content.ReadFromJsonAsync<CreateAlbumResponse>())!;
+        var request = new ResumableUploadRequest(album.AlbumId, null, null, "video.mp4", "video/mp4", 5,
+            new string('a', 64), DateTimeOffset.UtcNow, true);
+        var response = await client.PostAsJsonAsync("/api/files/uploads", request);
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Contains("FILE_TOO_LARGE", await response.Content.ReadAsStringAsync());
+    }
 }

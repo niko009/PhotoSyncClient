@@ -88,4 +88,12 @@
         <item quantity="few">%1$d fisiere</item>
         <item quantity="other">%1$d de fisiere</item>
     </plurals>
+    <string name="upload_error_unavailable">Nu există conexiune la server</string>
+    <string name="upload_error_timeout">Încărcarea a expirat. Vom încerca din nou automat.</string>
+    <string name="upload_error_interrupted">Încărcarea a fost întreruptă. Vom încerca din nou automat.</string>
+    <string name="upload_error_large">Fișierul este prea mare</string>
+    <string name="upload_error_auth">Autorizarea dispozitivului a eșuat</string>
+    <string name="upload_error_server">Eroare de server. Vom încerca din nou automat.</string>
+    <string name="upload_error_local">Fișierul local lipsește sau nu poate fi citit</string>
+    <string name="upload_error_network">Eroare temporară de rețea. Vom încerca din nou automat.</string>
 </resources>

@@ -22,6 +22,9 @@ does not. See [device access](device-access.md). Enrollment is still automatic:
 The first portal implementation adds login/enrollment rate limits, a 5-device cap,
 25 MiB file cap, 10 GiB storage cap and a free-space reserve. Enrollment can be
 closed through configuration; recovery and invitation-based enrollment remain planned.
+The 25 MiB cap describes the first portal release. Current `compose.yml` sets
+`PhotoSync__MaxFileBytes=2147483648` (2 GiB); clients should use 4 MiB
+resumable chunks through Cloudflare. See [upload reliability](upload-reliability.md).
 Do not treat device isolation alone as approval to publish a public upload service.
 
 The initial single-owner decision has been extended to a family instance with
