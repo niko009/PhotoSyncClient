@@ -18,8 +18,8 @@ android {
         applicationId = "com.photosync.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7005
-        versionName = "0.7.5-beta"
+        versionCode = 7006
+        versionName = "0.7.6-beta"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://photosync.bacus.dev\"")
         // Public OAuth identifier. Never place the Google client_secret in an APK.
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"221018828266-g4jt660ltqoaf2oniuolc82i3m1mpoee.apps.googleusercontent.com\"")
@@ -90,6 +90,22 @@ android {
         }
     }
 }
+
+val verifyNoLegacyUploadEndpoint by tasks.registering {
+    group = "verification"
+    description = "Reject the legacy multipart upload endpoint in production Android sources."
+    doLast {
+        val legacyEndpoint = Regex("/api/files/upload(?!s)[\\\"'?\\s]")
+        val offenders = file("src/main").walkTopDown()
+            .filter { it.isFile && it.extension in setOf("kt", "java", "xml") }
+            .filter { legacyEndpoint.containsMatchIn(it.readText()) }
+            .map { it.relativeTo(projectDir).path }
+            .toList()
+        check(offenders.isEmpty()) { "Legacy multipart upload endpoint in production Android source: $offenders" }
+    }
+}
+
+tasks.named("preBuild") { dependsOn(verifyNoLegacyUploadEndpoint) }
 
 dependencies {
     val composeBom = platform(libs.androidx.compose.bom)

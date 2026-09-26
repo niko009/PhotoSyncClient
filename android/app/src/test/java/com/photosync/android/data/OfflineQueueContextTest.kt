@@ -3,6 +3,10 @@ package com.photosync.android.data
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import com.photosync.android.domain.model.PhotoCleanupPolicy
+import com.photosync.android.domain.model.PhotoItem
+import com.photosync.android.domain.model.PhotoSyncStatus
+import com.photosync.android.domain.repository.PhotoSyncRepository
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import kotlinx.coroutines.flow.first
@@ -89,5 +93,52 @@ class OfflineQueueContextTest {
         val queueJson = context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
             .getString("items", "").orEmpty()
         assertTrue(queueJson.contains("\"cleanup_policy\":\"Keep\""))
+    }
+
+    @Test
+    fun oldSerializedQueueItemUsesCurrentUploadPathOnlyOnce() = runBlocking {
+        context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE).edit()
+            .putString("items", """[{"id":"old-item","folder_id":"folder-1","title":"old-video.mp4","mime_type":"video/mp4","local_uri":"file:///old-video.mp4","upload_type":"multipart"}]""")
+            .commit()
+        val base = FakePhotoSyncRepository()
+        var uploads = 0
+        val delegate = object : PhotoSyncRepository by base {
+            override suspend fun uploadStagedMedia(
+                folderId: String,
+                uploadUri: Uri,
+                sourceUri: Uri,
+                displayName: String,
+                mimeType: String,
+                cleanupPolicy: PhotoCleanupPolicy?,
+            ): Boolean {
+                uploads++
+                assertEquals("file:///old-video.mp4", uploadUri.toString())
+                assertEquals(PhotoCleanupPolicy.Keep, cleanupPolicy)
+                return true
+            }
+        }
+        val repository = OfflineFirstPhotoSyncRepository(context, delegate, networkAvailable = { true })
+        val before = base.observeFolders().first().first { it.id == "folder-1" }.photoCount
+
+        assertEquals(before + 1, repository.observeFolders().first().first { it.id == "folder-1" }.photoCount)
+        repository.syncQueuedUploadsOnce()
+        repository.syncQueuedUploadsOnce()
+
+        assertEquals(1, uploads)
+        assertEquals(before, repository.observeFolders().first().first { it.id == "folder-1" }.photoCount)
+        assertEquals("[]", context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .getString("items", null))
+    }
+
+    @Test
+    fun differentMediaWithSameFilenameIsNotHiddenByQueue() = runBlocking {
+        context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE).edit()
+            .putString("items", """[{"id":"queued","folder_id":"folder-1","title":"same.jpg","mime_type":"image/jpeg","local_uri":"file:///queued.jpg"}]""")
+            .commit()
+        val other = PhotoItem("other", "same.jpg", PhotoSyncStatus.Pending, localUri = "file:///other.jpg")
+        val delegate = FakePhotoSyncRepository(seedFolders = listOf(FolderRecord("folder-1", "Camera", listOf(other))))
+        val repository = OfflineFirstPhotoSyncRepository(context, delegate, networkAvailable = { false })
+
+        assertEquals(2, repository.observeFolder("folder-1").first()!!.photos.size)
     }
 }

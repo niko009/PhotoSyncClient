@@ -39,6 +39,10 @@ import java.util.UUID
 class OfflineFirstPhotoSyncRepository(
     context: Context,
     private val delegate: PhotoSyncRepository,
+    private val networkAvailable: () -> Boolean = {
+        val manager = context.applicationContext.getSystemService(ConnectivityManager::class.java)
+        manager?.activeNetwork?.let { manager.getNetworkCapabilities(it) } != null
+    },
 ) : PhotoSyncRepository by delegate {
     private val appContext = context.applicationContext
     private val queueMutex = Mutex()
@@ -246,23 +250,7 @@ class OfflineFirstPhotoSyncRepository(
         Log.e(TAG, "Queued sync failed for ${item.title}", error)
         // Do not retry deterministic 4xx failures forever. 429/5xx and network
         // failures remain queued; WorkManager applies persistent exponential backoff.
-        val code = when (error) {
-            is PhotoSyncApiException -> when {
-                error.statusCode == 413 || error.code == "FILE_TOO_LARGE" -> "FILE_TOO_LARGE"
-                error.statusCode == 401 || error.statusCode == 403 -> "UNAUTHORIZED"
-                error.code == "UPLOAD_INTERRUPTED" -> "UPLOAD_INTERRUPTED"
-                error.statusCode == 408 -> "UPLOAD_TIMEOUT"
-                error.statusCode == 429 -> "TEMPORARY_NETWORK_FAILURE"
-                error.statusCode >= 500 -> "SERVER_ERROR"
-                else -> error.code ?: "UPLOAD_FAILED"
-            }
-            is java.net.SocketTimeoutException -> "UPLOAD_TIMEOUT"
-            is java.net.UnknownHostException, is java.net.ConnectException -> "SERVER_UNAVAILABLE"
-            is java.net.SocketException -> "TEMPORARY_NETWORK_FAILURE"
-            is LocalFileUnreadableException, is java.io.FileNotFoundException -> "LOCAL_FILE_UNREADABLE"
-            is java.io.IOException -> "UPLOAD_INTERRUPTED"
-            else -> "UPLOAD_FAILED"
-        }
+        val code = uploadFailureCode(error)
         val updated = queue.value.map {
             if (it.id == item.id) it.copy(
                 terminalFailure = error is PhotoSyncApiException && !error.isTransient ||
@@ -383,12 +371,8 @@ class OfflineFirstPhotoSyncRepository(
         queue.value = updated
     }
 
-    private fun hasNetwork(): Boolean {
-        val manager = appContext.getSystemService(ConnectivityManager::class.java) ?: return false
-        val network = manager.activeNetwork ?: return false
-        // A reachable LAN server does not require Android's internet validation.
-        return manager.getNetworkCapabilities(network) != null
-    }
+    // A reachable LAN server does not require Android's internet validation.
+    private fun hasNetwork(): Boolean = networkAvailable()
 
     private fun resolveDisplayName(uri: Uri): String? {
         if (uri.scheme == "file") return uri.lastPathSegment
@@ -492,8 +476,7 @@ class OfflineFirstPhotoSyncRepository(
 
         fun matches(photo: PhotoItem): Boolean =
             photo.localUri == sourceUri ||
-                photo.localUri == stagedUri ||
-                (photo.title == title && photo.serverFileId == null)
+                photo.localUri == stagedUri
     }
 
     companion object {

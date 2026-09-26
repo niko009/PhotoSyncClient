@@ -28,7 +28,8 @@ class PhotoSyncApiException(
     val retryAfterMillis: Long? = null,
     message: String,
 ) : IllegalStateException(message) {
-    val isTransient: Boolean get() = statusCode == 408 || statusCode == 429 || statusCode >= 500 || code == "UPLOAD_INTERRUPTED"
+    val isTransient: Boolean get() = statusCode == 408 || statusCode == 429 || statusCode == 499 || statusCode >= 500 ||
+        code == "UPLOAD_INTERRUPTED" || code == "UPLOAD_OFFSET_MISMATCH"
 }
 
 class LocalFileUnreadableException(cause: Throwable) : IOException("Local file is missing or unreadable", cause)
@@ -296,7 +297,7 @@ class PhotoSyncApiClient(
         require(offset in 0..sizeBytes) { "Server returned an invalid upload offset" }
 
         while (offset < sizeBytes) {
-            val chunkSize = minOf(RESUMABLE_CHUNK_BYTES.toLong(), sizeBytes - offset).toInt()
+            val chunkSize = resumableChunkSize(sizeBytes, offset)
             val connection = openConnection("/api/files/uploads/$uploadId?offset=$offset", "PUT")
             connection.doOutput = true
             connection.connectTimeout = 30_000
@@ -311,8 +312,11 @@ class PhotoSyncApiClient(
                     }
                 }
                 status = execute(connection)
-                offset = status.getLong("received_bytes")
-                require(offset <= sizeBytes) { "Server returned an invalid upload offset" }
+                val received = status.getLong("received_bytes")
+                require(received in (offset + 1)..minOf(sizeBytes, offset + chunkSize)) {
+                    "Server returned an invalid upload offset"
+                }
+                offset = received
             } finally { connection.disconnect() }
         }
         return postJson("/api/files/uploads/$uploadId/complete", JSONObject()).toUploadResult()
@@ -424,7 +428,7 @@ class PhotoSyncApiClient(
 
     companion object {
         const val DEFAULT_BASE_URL = BuildConfig.DEFAULT_SERVER_URL
-        private const val RESUMABLE_CHUNK_BYTES = 4 * 1024 * 1024
+        internal const val RESUMABLE_CHUNK_BYTES = 4 * 1024 * 1024
     }
 
     private fun effectiveBaseUrl(): String = normalizeBaseUrl(baseUrl)
@@ -441,6 +445,11 @@ private fun JSONObject.toGoogleAccount(): GoogleAccount? {
         displayName = getString("display_name"),
         linkedDevices = getInt("linked_devices"),
     )
+}
+
+internal fun resumableChunkSize(sizeBytes: Long, offset: Long): Int {
+    require(offset in 0 until sizeBytes)
+    return minOf(PhotoSyncApiClient.RESUMABLE_CHUNK_BYTES.toLong(), sizeBytes - offset).toInt()
 }
 
 private fun JSONObject.toUploadResult(): FileUploadResultDto = FileUploadResultDto(

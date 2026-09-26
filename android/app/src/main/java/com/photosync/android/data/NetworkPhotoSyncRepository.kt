@@ -153,6 +153,7 @@ class NetworkPhotoSyncRepository(
     }
 
     private suspend fun refreshInternal() {
+        val previousConnectionStatus = stats.value.connectionStatus
         stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Connecting)
         runCatching {
             withContext(Dispatchers.IO) {
@@ -297,9 +298,11 @@ class NetworkPhotoSyncRepository(
                 // A bad file (413/hash mismatch/authorization) is not a server
                 // outage. Preserve the last known online state so the UI can
                 // report the file failure truthfully and continue the queue.
-                if (error is java.net.UnknownHostException || error is java.net.ConnectException) {
-                    stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Offline)
-                }
+                stats.value = stats.value.copy(connectionStatus = when (error) {
+                    is java.net.UnknownHostException, is java.net.ConnectException -> ConnectionStatus.Offline
+                    is PhotoSyncApiException -> ConnectionStatus.Online
+                    else -> previousConnectionStatus
+                })
             }
     }
 
@@ -472,7 +475,10 @@ class NetworkPhotoSyncRepository(
                 if (error is CancellationException) throw error
                 attemptedPhotoId?.let { id ->
                     localPhotos.value[folderId]?.firstOrNull { it.id == id }?.let {
-                        updateLocalPhoto(folderId, it.copy(status = PhotoSyncStatus.Failed))
+                        updateLocalPhoto(folderId, it.copy(
+                            status = PhotoSyncStatus.Failed,
+                            failureCode = uploadFailureCode(error),
+                        ))
                     }
                 }
                 restoreLocalState()
@@ -554,6 +560,7 @@ class NetworkPhotoSyncRepository(
                                     serverFileId = photoObject.optIntOrNull("server_file_id"),
                                     serverRelativePath = photoObject.optStringOrNull("server_relative_path"),
                                     mimeType = photoObject.optStringOrNull("mime_type"),
+                                    failureCode = photoObject.optStringOrNull("failure_code"),
                                 ),
                             )
                         }
@@ -617,6 +624,7 @@ class NetworkPhotoSyncRepository(
                         .put("server_file_id", photo.serverFileId ?: JSONObject.NULL)
                         .put("server_relative_path", photo.serverRelativePath ?: JSONObject.NULL)
                         .put("mime_type", photo.mimeType ?: JSONObject.NULL)
+                        .put("failure_code", photo.failureCode ?: JSONObject.NULL)
                 )
             }
             payload.put(
