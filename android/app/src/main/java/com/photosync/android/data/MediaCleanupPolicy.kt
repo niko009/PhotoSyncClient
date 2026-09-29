@@ -17,3 +17,13 @@ internal fun cleanupAction(policy: PhotoCleanupPolicy, mimeType: String): MediaC
     }
     PhotoCleanupPolicy.Delete -> MediaCleanupAction.DeleteSource
 }
+
+internal fun cleanupActionAfterUpload(
+    uploadSucceeded: Boolean,
+    policy: PhotoCleanupPolicy,
+    mimeType: String,
+): MediaCleanupAction = if (uploadSucceeded) {
+    cleanupAction(policy, mimeType)
+} else {
+    MediaCleanupAction.KeepSource
+}

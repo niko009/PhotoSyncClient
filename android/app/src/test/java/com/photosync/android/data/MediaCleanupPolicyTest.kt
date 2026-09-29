@@ -27,4 +27,12 @@ class MediaCleanupPolicyTest {
     fun deleteRequestsSourceRemoval() {
         assertEquals(MediaCleanupAction.DeleteSource, cleanupAction(PhotoCleanupPolicy.Delete, "image/jpeg"))
     }
+
+    @Test
+    fun failedUploadNeverRequestsSourceRemoval() {
+        assertEquals(
+            MediaCleanupAction.KeepSource,
+            cleanupActionAfterUpload(false, PhotoCleanupPolicy.Delete, "image/jpeg"),
+        )
+    }
 }

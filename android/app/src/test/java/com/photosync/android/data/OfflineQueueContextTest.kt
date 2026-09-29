@@ -96,6 +96,74 @@ class OfflineQueueContextTest {
     }
 
     @Test
+    fun folderKeepOverrideWinsOverGlobalDelete() = runBlocking {
+        context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .edit().remove("items").commit()
+        val source = File(context.cacheDir, "folder-keep.jpg").apply { writeText("photo") }
+        val delegate = FakePhotoSyncRepository().also {
+            it.updateGlobalPhotoCleanupPolicy(PhotoCleanupPolicy.Delete)
+            it.updateFolderPhotoCleanupPolicy("folder-1", PhotoCleanupPolicy.Keep)
+        }
+        val repository = OfflineFirstPhotoSyncRepository(context, delegate, networkAvailable = { false })
+
+        assertTrue(repository.uploadToFolder("folder-1", Uri.fromFile(source)))
+
+        val queueJson = context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .getString("items", "").orEmpty()
+        assertTrue(queueJson.contains("\"cleanup_policy\":\"Keep\""))
+        assertTrue(source.exists())
+    }
+
+    @Test
+    fun folderDeleteOverrideWinsOverGlobalKeep() = runBlocking {
+        context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .edit().remove("items").commit()
+        val source = File(context.cacheDir, "folder-delete.jpg").apply { writeText("photo") }
+        val delegate = FakePhotoSyncRepository().also {
+            it.updateGlobalPhotoCleanupPolicy(PhotoCleanupPolicy.Keep)
+            it.updateFolderPhotoCleanupPolicy("folder-1", PhotoCleanupPolicy.Delete)
+        }
+        val repository = OfflineFirstPhotoSyncRepository(context, delegate, networkAvailable = { false })
+
+        assertTrue(repository.uploadToFolder("folder-1", Uri.fromFile(source)))
+
+        val queueJson = context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .getString("items", "").orEmpty()
+        assertTrue(queueJson.contains("\"cleanup_policy\":\"Delete\""))
+    }
+
+    @Test
+    fun successfulQueuedUploadPassesOriginalSourceInsteadOfStagedCopyToCleanup() = runBlocking {
+        context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE)
+            .edit().remove("items").commit()
+        val source = File(context.cacheDir, "source-for-delete.jpg").apply { writeText("photo") }
+        val base = FakePhotoSyncRepository()
+        base.updateGlobalPhotoCleanupPolicy(PhotoCleanupPolicy.Delete)
+        var verified = false
+        val delegate = object : PhotoSyncRepository by base {
+            override suspend fun uploadStagedMedia(
+                folderId: String,
+                uploadUri: Uri,
+                sourceUri: Uri,
+                displayName: String,
+                mimeType: String,
+                cleanupPolicy: PhotoCleanupPolicy?,
+            ): Boolean {
+                assertEquals(Uri.fromFile(source), sourceUri)
+                assertNotEquals(sourceUri, uploadUri)
+                assertEquals(PhotoCleanupPolicy.Delete, cleanupPolicy)
+                verified = true
+                return true
+            }
+        }
+        val repository = OfflineFirstPhotoSyncRepository(context, delegate, networkAvailable = { true })
+
+        assertTrue(repository.uploadToFolder("folder-1", Uri.fromFile(source)))
+
+        assertTrue(verified)
+    }
+
+    @Test
     fun oldSerializedQueueItemUsesCurrentUploadPathOnlyOnce() = runBlocking {
         context.getSharedPreferences("photosync_offline_queue_v1", Context.MODE_PRIVATE).edit()
             .putString("items", """[{"id":"old-item","folder_id":"folder-1","title":"old-video.mp4","mime_type":"video/mp4","local_uri":"file:///old-video.mp4","upload_type":"multipart"}]""")

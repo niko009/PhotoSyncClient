@@ -803,7 +803,7 @@ class NetworkPhotoSyncRepository(
         folderId: String,
         mimeType: String,
     ): String? {
-        return when (cleanupAction(policy, mimeType)) {
+        return when (cleanupActionAfterUpload(true, policy, mimeType)) {
             MediaCleanupAction.KeepSource -> uri.toString()
             MediaCleanupAction.CompressImageThenDeleteSource -> {
                 runCatching {

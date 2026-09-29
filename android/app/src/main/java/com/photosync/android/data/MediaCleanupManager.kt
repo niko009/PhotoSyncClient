@@ -1,7 +1,11 @@
 package com.photosync.android.data
 
+import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.provider.DocumentsContract
+import android.provider.MediaStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,8 +29,9 @@ class MediaCleanupManager(context: Context) {
             uri.path?.let { File(it).delete() }
             return
         }
-        if (uri.scheme != "content" || uri in pending.value) return
-        pending.value = pending.value + uri
+        val deleteUri = resolveMediaStoreDeleteUri(appContext, uri) ?: return
+        if (deleteUri in pending.value) return
+        pending.value = pending.value + deleteUri
         persist()
     }
 
@@ -42,7 +47,7 @@ class MediaCleanupManager(context: Context) {
             val array = JSONArray(raw)
             buildList {
                 for (index in 0 until array.length()) {
-                    Uri.parse(array.getString(index)).takeIf { it.scheme == "content" }?.let(::add)
+                    resolveMediaStoreDeleteUri(appContext, Uri.parse(array.getString(index)))?.let(::add)
                 }
             }.distinct()
         }.getOrDefault(emptyList())
@@ -59,3 +64,59 @@ class MediaCleanupManager(context: Context) {
         private const val KEY_PENDING = "pending_deletions"
     }
 }
+
+private const val LOCAL_PHOTO_PICKER_AUTHORITY = "com.android.providers.media.photopicker"
+
+/** Returns the concrete MediaStore item that Android's delete consent API accepts. */
+internal fun resolveMediaStoreDeleteUri(context: Context, sourceUri: Uri): Uri? {
+    if (sourceUri.scheme != "content") return null
+
+    if (sourceUri.authority == MediaStore.AUTHORITY) {
+        val segments = sourceUri.pathSegments
+        if (segments.firstOrNull() in setOf("picker", "picker_get_content")) {
+            return localPickerMediaId(segments)?.let(::externalMediaFileUri)
+        }
+        if (segments.lastOrNull()?.toLongOrNull() != null) return sourceUri
+    }
+
+    if (sourceUri.authority == "com.android.providers.media.documents") {
+        mediaDocumentUri(sourceUri)?.let { return it }
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+        DocumentsContract.isDocumentUri(context, sourceUri)
+    ) {
+        return runCatching { MediaStore.getMediaUri(context, sourceUri) }
+            .getOrNull()
+            ?.takeIf { it.lastPathSegment?.toLongOrNull() != null }
+    }
+
+    return null
+}
+
+private fun localPickerMediaId(segments: List<String>): Long? = when {
+    // Android 11/12 Photo Picker format: /picker/<user-id>/<media-id>
+    segments.size == 3 && segments[1].toIntOrNull() != null -> segments[2].toLongOrNull()
+    // Current local Photo Picker format:
+    // /picker/<user-id>/com.android.providers.media.photopicker/media/<media-id>
+    segments.size == 5 &&
+        segments[1].toIntOrNull() != null &&
+        segments[2] == LOCAL_PHOTO_PICKER_AUTHORITY &&
+        segments[3] == "media" -> segments[4].toLongOrNull()
+    else -> null
+}
+
+private fun mediaDocumentUri(uri: Uri): Uri? {
+    val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull() ?: return null
+    val (type, id) = documentId.split(':', limit = 2).takeIf { it.size == 2 } ?: return null
+    val mediaId = id.toLongOrNull() ?: return null
+    val collection = when (type) {
+        "image" -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        "video" -> MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        else -> return null
+    }
+    return ContentUris.withAppendedId(collection, mediaId)
+}
+
+private fun externalMediaFileUri(id: Long): Uri =
+    ContentUris.withAppendedId(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL), id)
