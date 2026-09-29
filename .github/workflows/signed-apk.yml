@@ -81,13 +81,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          NOTES="PhotoSync $RELEASE_LABEL
-
-- Fix Android gallery cleanup so Delete resolves the original MediaStore item after a verified upload.
-- Keep queued cleanup-policy snapshots unchanged.
-- Preserve folder overrides and resumable uploads.
-
-APK SHA-256: $APK_SHA256"
+          NOTES="$(printf 'PhotoSync %s\n\n- Fix Android gallery cleanup so Delete resolves the original MediaStore item after a verified upload.\n- Keep queued cleanup-policy snapshots unchanged.\n- Preserve folder overrides and resumable uploads.\n\nAPK SHA-256: %s\n' "$RELEASE_LABEL" "$APK_SHA256")"
           if gh release view "$RELEASE_LABEL" >/dev/null 2>&1; then
             gh release upload "$RELEASE_LABEL" "$RUNNER_TEMP/$APK_NAME" "$RUNNER_TEMP/$APK_NAME.sha256" "$RUNNER_TEMP/latest.json" --clobber
           else
