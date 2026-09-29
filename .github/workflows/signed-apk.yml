@@ -2,23 +2,19 @@ name: Signed Android APK
 
 on:
   workflow_dispatch:
-    inputs:
-      release_label:
-        description: Version or release label being built
-        required: true
-        type: string
   push:
     branches:
       - main
     paths:
       - android/app/build.gradle.kts
+      - .github/workflows/signed-apk.yml
 
 permissions:
   contents: write
 
 jobs:
   signed-apk:
-    name: Build signed APK
+    name: Build and publish signed APK
     runs-on: ubuntu-latest
     environment: android-release
     steps:
@@ -28,66 +24,56 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+
       - name: Materialize ephemeral signing files
         env:
           PHOTOSYNC_KEYSTORE_BASE64: ${{ secrets.PHOTOSYNC_KEYSTORE_BASE64 }}
           PHOTOSYNC_SIGNING_PROPERTIES: ${{ secrets.PHOTOSYNC_SIGNING_PROPERTIES }}
         run: |
+          set -euo pipefail
           test -n "$PHOTOSYNC_KEYSTORE_BASE64"
           test -n "$PHOTOSYNC_SIGNING_PROPERTIES"
           mkdir -p android/signing
           printf '%s' "$PHOTOSYNC_KEYSTORE_BASE64" | base64 --decode > android/signing/photosync-release.jks
           printf '%s' "$PHOTOSYNC_SIGNING_PROPERTIES" > android/signing/signing.properties
           chmod 600 android/signing/photosync-release.jks android/signing/signing.properties
-      - name: Verify and build signed release
+
+      - name: Test, lint, and build signed release
         run: |
+          set -euo pipefail
+          chmod +x gradlew
           ./gradlew :android:app:testDebugUnitTest :android:app:lintRelease :android:app:assembleRelease
+          test -f android/app/build/outputs/apk/release/app-release.apk
           test ! -e android/app/build/outputs/apk/release/app-release-unsigned.apk
-      - name: Prepare release artifacts
+
+      - name: Prepare release files
         shell: bash
         run: |
           set -euo pipefail
           VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' android/app/build.gradle.kts | head -n1)"
           VERSION_CODE="$(sed -nE 's/^[[:space:]]*versionCode = ([0-9]+).*/\1/p' android/app/build.gradle.kts | head -n1)"
-          test -n "$VERSION"
-          test -n "$VERSION_CODE"
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.release_label }}" != "$VERSION" ]]; then
-            echo "release_label must match versionName: expected $VERSION"
-            exit 1
-          fi
           APK_NAME="photosync-android-$VERSION.apk"
-          APK_SOURCE="android/app/build/outputs/apk/release/app-release.apk"
-          APK_TARGET="$RUNNER_TEMP/$APK_NAME"
-          cp "$APK_SOURCE" "$APK_TARGET"
-          SHA256="$(sha256sum "$APK_TARGET" | awk '{print $1}')"
-          SIZE_BYTES="$(stat -c%s "$APK_TARGET")"
+          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/$APK_NAME"
+          SHA256="$(sha256sum "$RUNNER_TEMP/$APK_NAME" | awk '{print $1}')"
+          SIZE_BYTES="$(stat -c%s "$RUNNER_TEMP/$APK_NAME")"
           printf '%s  %s\n' "$SHA256" "$APK_NAME" > "$RUNNER_TEMP/$APK_NAME.sha256"
-          cat > "$RUNNER_TEMP/latest.json" <<EOF
-          {
-            "versionCode": $VERSION_CODE,
-            "versionName": "$VERSION",
-            "apkUrl": "https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/$APK_NAME",
-            "sha256": "$SHA256",
-            "sizeBytes": $SIZE_BYTES
-          }
-          EOF
-          {
-            echo "RELEASE_LABEL=$VERSION"
-            echo "VERSION_CODE=$VERSION_CODE"
-            echo "APK_NAME=$APK_NAME"
-            echo "APK_SHA256=$SHA256"
-            echo "APK_SIZE_BYTES=$SIZE_BYTES"
-          } >> "$GITHUB_ENV"
-      - name: Upload signed APK artifact
+          printf '{\n  "versionCode": %s,\n  "versionName": "%s",\n  "apkUrl": "https://github.com/%s/releases/download/%s/%s",\n  "sha256": "%s",\n  "sizeBytes": %s\n}\n' "$VERSION_CODE" "$VERSION" "$GITHUB_REPOSITORY" "$VERSION" "$APK_NAME" "$SHA256" "$SIZE_BYTES" > "$RUNNER_TEMP/latest.json"
+          echo "RELEASE_LABEL=$VERSION" >> "$GITHUB_ENV"
+          echo "APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
+          echo "APK_SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "APK_SIZE_BYTES=$SIZE_BYTES" >> "$GITHUB_ENV"
+
+      - name: Upload signed build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: photosync-${{ env.RELEASE_LABEL }}-signed-apk
+          name: photosync-signed-apk-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/${{ env.APK_NAME }}
             ${{ runner.temp }}/${{ env.APK_NAME }}.sha256
             ${{ runner.temp }}/latest.json
           if-no-files-found: error
           retention-days: 30
+
       - name: Publish GitHub prerelease
         if: github.event_name == 'push'
         env:
@@ -98,15 +84,16 @@ jobs:
           NOTES="PhotoSync $RELEASE_LABEL
 
 - Fix Android gallery cleanup so Delete resolves the original MediaStore item after a verified upload.
-- Keep queue cleanup policy snapshot semantics unchanged.
-- Preserve folder override behavior and resumable uploads.
+- Keep queued cleanup-policy snapshots unchanged.
+- Preserve folder overrides and resumable uploads.
 
 APK SHA-256: $APK_SHA256"
           if gh release view "$RELEASE_LABEL" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_LABEL"               "$RUNNER_TEMP/$APK_NAME"               "$RUNNER_TEMP/$APK_NAME.sha256"               "$RUNNER_TEMP/latest.json"               --clobber
+            gh release upload "$RELEASE_LABEL" "$RUNNER_TEMP/$APK_NAME" "$RUNNER_TEMP/$APK_NAME.sha256" "$RUNNER_TEMP/latest.json" --clobber
           else
-            gh release create "$RELEASE_LABEL"               --target "$GITHUB_SHA"               --title "PhotoSync $RELEASE_LABEL"               --prerelease               --notes "$NOTES"               "$RUNNER_TEMP/$APK_NAME"               "$RUNNER_TEMP/$APK_NAME.sha256"               "$RUNNER_TEMP/latest.json"
+            gh release create "$RELEASE_LABEL" --target "$GITHUB_SHA" --title "PhotoSync $RELEASE_LABEL" --prerelease --notes "$NOTES" "$RUNNER_TEMP/$APK_NAME" "$RUNNER_TEMP/$APK_NAME.sha256" "$RUNNER_TEMP/latest.json"
           fi
+
       - name: Remove signing material
         if: always()
         run: rm -rf android/signing
