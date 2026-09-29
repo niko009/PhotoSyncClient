@@ -1,0 +1,73 @@
+name: Publish PhotoSync 0.7.7 prebuilt
+
+on:
+  push:
+    branches:
+      - release-staging-0.7.7
+    paths:
+      - release-staging/ready.txt
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct verified APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat release-staging/chunk-*.b64 | base64 --decode > photosync-android-0.7.7-beta.apk
+          echo "eaf9be6ab8156d648e10541293c8cb1ed422b8e2dd2a953a24c71fb42bae9302  photosync-android-0.7.7-beta.apk" | sha256sum -c -
+          test "$(stat -c%s photosync-android-0.7.7-beta.apk)" = "7136673"
+
+      - name: Verify Android version and signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n1)"
+          test -n "$APKSIGNER"
+          test -n "$AAPT"
+          CERT="$("$APKSIGNER" verify --print-certs photosync-android-0.7.7-beta.apk | sed -nE 's/.*certificate SHA-256 digest: ([0-9a-fA-F:]+).*/\1/p' | head -n1 | tr -d ':' | tr 'A-F' 'a-f')"
+          test "$CERT" = "0d3539a66b5938b4cabbd7d76acee286877a5e46648b4b8c6d4236f5c8b9862d"
+          BADGING="$("$AAPT" dump badging photosync-android-0.7.7-beta.apk | head -n1)"
+          echo "$BADGING"
+          grep -q "package: name='com.photosync.android'" <<<"$BADGING"
+          grep -q "versionCode='7007'" <<<"$BADGING"
+          grep -q "versionName='0.7.7-beta'" <<<"$BADGING"
+
+      - name: Prepare release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="eaf9be6ab8156d648e10541293c8cb1ed422b8e2dd2a953a24c71fb42bae9302"
+          APK="photosync-android-0.7.7-beta.apk"
+          printf '%s  %s\n' "$SHA" "$APK" > "$APK.sha256"
+          cat > latest.json <<'EOF'
+          {
+            "versionCode": 7007,
+            "versionName": "0.7.7-beta",
+            "apkUrl": "https://github.com/niko009/PhotoSyncClient/releases/download/0.7.7-beta/photosync-android-0.7.7-beta.apk",
+            "sha256": "eaf9be6ab8156d648e10541293c8cb1ed422b8e2dd2a953a24c71fb42bae9302",
+            "sizeBytes": 7136673
+          }
+          EOF
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN_SHA="$(gh api repos/$GITHUB_REPOSITORY/commits/main --jq .sha)"
+          NOTES="$(printf 'PhotoSync 0.7.7-beta\n\n- Fix Android gallery cleanup so Delete resolves the original MediaStore item after a verified upload.\n- Preserve cleanup-policy snapshot semantics for already queued files.\n- Preserve per-folder cleanup overrides and resumable uploads.\n\nAPK SHA-256: eaf9be6ab8156d648e10541293c8cb1ed422b8e2dd2a953a24c71fb42bae9302\n')"
+          if gh release view "0.7.7-beta" >/dev/null 2>&1; then
+            gh release upload "0.7.7-beta" photosync-android-0.7.7-beta.apk photosync-android-0.7.7-beta.apk.sha256 latest.json --clobber
+            gh release edit "0.7.7-beta" --target "$MAIN_SHA" --title "PhotoSync 0.7.7-beta" --prerelease --notes "$NOTES"
+          else
+            gh release create "0.7.7-beta" --target "$MAIN_SHA" --title "PhotoSync 0.7.7-beta" --prerelease --notes "$NOTES" photosync-android-0.7.7-beta.apk photosync-android-0.7.7-beta.apk.sha256 latest.json
+          fi
