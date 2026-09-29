@@ -31,7 +31,9 @@ jobs:
           java-version: '17'
           cache: gradle
       - name: Unit tests, lint, and unsigned release compilation
-        run: ./gradlew :android:app:testDebugUnitTest :android:app:lintRelease :android:app:assembleRelease
+        run: |
+          chmod +x gradlew
+          ./gradlew :android:app:testDebugUnitTest :android:app:lintRelease :android:app:assembleRelease
       # This proves that the release variant builds. It is deliberately not a
       # distributable APK: release signing material never enters ordinary CI.
       - name: Upload unsigned release candidate
