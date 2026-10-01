@@ -36,6 +36,7 @@ jobs:
           chmod 600 android/signing/photosync-release.jks android/signing/signing.properties
       - name: Verify and build signed release
         run: |
+          chmod +x gradlew
           ./gradlew :android:app:testDebugUnitTest :android:app:lintRelease :android:app:assembleRelease
           test ! -e android/app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Upload signed APK
