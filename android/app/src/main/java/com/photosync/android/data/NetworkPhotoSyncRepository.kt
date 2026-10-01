@@ -140,7 +140,7 @@ class NetworkPhotoSyncRepository(
                 upsertLocalFolder(localSummary, localDetail)
 
                 runCatching {
-                    registerCurrentDevice()
+                    ensureCurrentDeviceRegistration()
                     apiClient.createAlbum(deviceUuid = deviceUuid, albumName = normalized)
                 }.onFailure { error ->
                     Log.e(TAG, "Server folder creation failed for $normalized", error)
@@ -153,11 +153,13 @@ class NetworkPhotoSyncRepository(
     }
 
     private suspend fun refreshInternal() {
+        val refreshPreferences = appContext.getSharedPreferences(cacheNamespace, Context.MODE_PRIVATE)
+        if (refreshPreferences.getLong("refresh_retry_at", 0) > System.currentTimeMillis()) return
         val previousConnectionStatus = stats.value.connectionStatus
         stats.value = stats.value.copy(connectionStatus = ConnectionStatus.Connecting)
         runCatching {
             withContext(Dispatchers.IO) {
-                registerCurrentDevice()
+                ensureCurrentDeviceRegistration()
                 googleAccount.value = apiClient.googleAccount()
                 val summary = apiClient.getSummary()
                 val visibleDevices = apiClient.getDevices()
@@ -282,6 +284,7 @@ class NetworkPhotoSyncRepository(
                 persistLocalPhotos()
                 folderDetails.value = details
                 folders.value = summaries.values.toList()
+                refreshPreferences.edit().remove("refresh_retry_at").remove("refresh_attempts").commit()
                 stats.value = DashboardStats(
                     totalFolders = folders.value.size,
                     totalPhotos = maxOf(summary.fileCount, folders.value.sumOf { it.photoCount }),
@@ -293,6 +296,13 @@ class NetworkPhotoSyncRepository(
             }
         }
             .onFailure { error ->
+                if (error is CancellationException) throw error
+                if (error is PhotoSyncApiException && error.isTransient) {
+                    val attempts = refreshPreferences.getInt("refresh_attempts", 0)
+                    val delay = maxOf(error.retryAfterMillis ?: 0, 30_000L shl attempts.coerceAtMost(7))
+                    refreshPreferences.edit().putLong("refresh_retry_at", System.currentTimeMillis() + delay)
+                        .putInt("refresh_attempts", attempts + 1).commit()
+                }
                 Log.e(TAG, "Refresh failed", error)
                 restoreLocalState()
                 // A bad file (413/hash mismatch/authorization) is not a server
@@ -385,6 +395,7 @@ class NetworkPhotoSyncRepository(
         propagateFailure: Boolean = false,
     ): Boolean {
         var attemptedPhotoId: String? = null
+        var serverCommitted = false
         return runCatching {
             withContext(Dispatchers.IO) {
                 val folder = folderDetails.value[folderId] ?: error("Upload folder was not found.")
@@ -425,7 +436,7 @@ class NetworkPhotoSyncRepository(
                 updateLocalPhoto(folderId, PhotoItem(tempPhotoId, originalName, PhotoSyncStatus.Uploading, sourceUri.toString(), thumbnailPath))
                 restoreLocalState()
 
-                registerCurrentDevice()
+                ensureCurrentDeviceRegistration()
                 val uploadResult = if (folder.remoteAlbumId != null) {
                     apiClient.uploadFileToAlbum(
                         albumId = folder.remoteAlbumId,
@@ -449,12 +460,17 @@ class NetworkPhotoSyncRepository(
                         openFile = openFile,
                     )
                 }
-                val localUriAfterCleanup = applyCleanupPolicy(
+                // Persist the server commit before auxiliary cleanup can fail or the process stops.
+                updateLocalPhoto(folderId, PhotoItem(tempPhotoId, originalName, PhotoSyncStatus.Synced,
+                    sourceUri.toString(), thumbnailPath, uploadResult.serverFileId,
+                    uploadResult.relativePath, mimeType, uploadSourceUri = uploadUri.toString()))
+                serverCommitted = true
+                val localUriAfterCleanup = runCatching { applyCleanupPolicy(
                     sourceUri,
                     cleanupPolicy ?: effectivePolicy(folderId),
                     folderId,
                     mimeType,
-                )
+                ) }.getOrDefault(sourceUri.toString())
                 updateLocalPhoto(
                     folderId,
                     PhotoItem(
@@ -466,11 +482,16 @@ class NetworkPhotoSyncRepository(
                         uploadResult.serverFileId,
                         uploadResult.relativePath,
                         mimeType,
+                        uploadSourceUri = uploadUri.toString(),
                     ),
                 )
-                refreshInternal()
+                restoreLocalState()
             }
         }
+            .recover { error ->
+                if (error is CancellationException || !serverCommitted) throw error
+                Log.e(TAG, "Post-upload local update failed; server commit remains successful", error)
+            }
             .onFailure { error ->
                 if (error is CancellationException) throw error
                 attemptedPhotoId?.let { id ->
@@ -498,7 +519,7 @@ class NetworkPhotoSyncRepository(
         private const val APP_VERSION = com.photosync.android.BuildConfig.VERSION_NAME
     }
 
-    private fun registerCurrentDevice() = apiClient.registerDevice(
+    private fun ensureCurrentDeviceRegistration() = apiClient.registerDevice(
         deviceUuid = deviceUuid,
         deviceName = deviceName,
         appVersion = APP_VERSION,
@@ -561,6 +582,7 @@ class NetworkPhotoSyncRepository(
                                     serverRelativePath = photoObject.optStringOrNull("server_relative_path"),
                                     mimeType = photoObject.optStringOrNull("mime_type"),
                                     failureCode = photoObject.optStringOrNull("failure_code"),
+                                    uploadSourceUri = photoObject.optStringOrNull("upload_source_uri"),
                                 ),
                             )
                         }
@@ -625,6 +647,7 @@ class NetworkPhotoSyncRepository(
                         .put("server_relative_path", photo.serverRelativePath ?: JSONObject.NULL)
                         .put("mime_type", photo.mimeType ?: JSONObject.NULL)
                         .put("failure_code", photo.failureCode ?: JSONObject.NULL)
+                        .put("upload_source_uri", photo.uploadSourceUri ?: JSONObject.NULL)
                 )
             }
             payload.put(
@@ -637,7 +660,7 @@ class NetworkPhotoSyncRepository(
         appContext.getSharedPreferences(cacheNamespace, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_LOCAL_PHOTOS, payload.toString())
-            .apply()
+            .commit()
     }
 
     private fun persistFolderPolicies() {

@@ -48,7 +48,31 @@ class PhotoSyncApiClient(
 
     fun currentBaseUrl(): String = effectiveBaseUrl()
 
-    fun registerDevice(
+    fun registerDevice(deviceUuid: String, deviceName: String, appVersion: String): DeviceRegistrationDto = synchronized(registrationLock) {
+        val key = "$deviceUuid:$deviceName:$appVersion"
+        val preferences = identity.registrationPreferences
+        val id = preferences.getInt("$key:id", 0)
+        if (id > 0) return@synchronized DeviceRegistrationDto(id, true)
+        val nextAttempt = preferences.getLong("$deviceUuid:retry_at", 0)
+        if (nextAttempt > System.currentTimeMillis()) throw PhotoSyncApiException(
+            429, null, nextAttempt - System.currentTimeMillis(), "Device registration is backing off")
+        try {
+            registerDeviceInternal(deviceUuid, deviceName, appVersion).also {
+                check(preferences.edit().putInt("$key:id", it.deviceId)
+                    .remove("$deviceUuid:retry_at").remove("$deviceUuid:attempts").commit())
+            }
+        } catch (error: PhotoSyncApiException) {
+            if (error.isTransient) {
+                val attempts = preferences.getInt("$deviceUuid:attempts", 0)
+                val delay = maxOf(error.retryAfterMillis ?: 0, 30_000L shl attempts.coerceAtMost(7))
+                preferences.edit().putLong("$deviceUuid:retry_at", System.currentTimeMillis() + delay)
+                    .putInt("$deviceUuid:attempts", attempts + 1).commit()
+            }
+            throw error
+        }
+    }
+
+    private fun registerDeviceInternal(
         deviceUuid: String,
         deviceName: String,
         appVersion: String,
@@ -260,7 +284,9 @@ class PhotoSyncApiClient(
                 }
                 if (!transient || retry >= 2) throw error
                 val delayMillis = (error as? PhotoSyncApiException)?.retryAfterMillis
-                    ?.coerceIn(1_000, 30_000) ?: (1_000L shl retry)
+                    ?.coerceAtLeast(1_000) ?: (1_000L shl retry)
+                // Long server cooldowns belong to the durable queue, not a sleeping upload thread.
+                if (delayMillis > 30_000) throw error
                 Thread.sleep(delayMillis)
                 retry++
             }
@@ -385,6 +411,15 @@ class PhotoSyncApiClient(
             diagnostics?.append("${connection.requestMethod} ${connection.url.path} -> $statusCode (${body.length} bytes)")
             if (statusCode !in 200..299) {
                 val problem = runCatching { JSONObject(body) }.getOrNull()
+                if (problem?.optString("code") == "DEVICE_NOT_FOUND") {
+                    synchronized(registrationLock) {
+                        val preferences = identity.registrationPreferences
+                        val editor = preferences.edit()
+                        preferences.all.keys.filter { it.startsWith(deviceUuid() + ":") && it.endsWith(":id") }
+                            .forEach { editor.remove(it) }
+                        editor.commit()
+                    }
+                }
                 throw PhotoSyncApiException(
                     statusCode = statusCode,
                     code = problem?.optString("code")?.takeIf { it.isNotBlank() },
@@ -423,10 +458,12 @@ class PhotoSyncApiClient(
     private fun parseRetryAfterMillis(value: String?): Long? {
         val trimmed = value?.trim().orEmpty()
         trimmed.toLongOrNull()?.let { return it.coerceAtLeast(0) * 1_000L }
-        return runCatching { (Instant.parse(trimmed).toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0) }.getOrNull()
+        return runCatching { (java.time.ZonedDateTime.parse(trimmed,
+            java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0) }.getOrNull()
     }
 
     companion object {
+        private val registrationLock = Any()
         const val DEFAULT_BASE_URL = BuildConfig.DEFAULT_SERVER_URL
         internal const val RESUMABLE_CHUNK_BYTES = 4 * 1024 * 1024
     }

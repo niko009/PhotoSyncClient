@@ -238,11 +238,15 @@ class OfflineFirstPhotoSyncRepository(
 
     suspend fun syncQueuedUploadsOnce() = queueMutex.withLock {
         if (!hasNetwork()) return@withLock
-        val snapshot = queue.value.filterNot { it.terminalFailure }
-        snapshot.forEach { item ->
+        if (appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getLong("retry_at", 0) > System.currentTimeMillis()) return@withLock
+        val snapshot = queue.value.filterNot { it.terminalFailure || it.nextAttemptAt > System.currentTimeMillis() }
+        for (item in snapshot) {
             runCatching { check(syncItem(item)) { "Server did not accept ${item.title}." } }
                 .onFailure { if (it is CancellationException) throw it }
                 .onFailure { error -> handleItemFailure(item, error) }
+            if (appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getLong("retry_at", 0) > System.currentTimeMillis()) break
         }
     }
 
@@ -251,11 +255,20 @@ class OfflineFirstPhotoSyncRepository(
         // Do not retry deterministic 4xx failures forever. 429/5xx and network
         // failures remain queued; WorkManager applies persistent exponential backoff.
         val code = uploadFailureCode(error)
+        if (error is PhotoSyncApiException && error.statusCode == 429) {
+            appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putLong("retry_at", System.currentTimeMillis() + maxOf(error.retryAfterMillis ?: 0,
+                    30_000L shl item.retryAttempts.coerceAtMost(7))).commit()
+        }
         val updated = queue.value.map {
             if (it.id == item.id) it.copy(
                 terminalFailure = error is PhotoSyncApiException && !error.isTransient ||
                     error is LocalFileUnreadableException || error is java.io.FileNotFoundException,
                 errorCode = code,
+                retryAttempts = it.retryAttempts + 1,
+                nextAttemptAt = System.currentTimeMillis() + maxOf(
+                    (error as? PhotoSyncApiException)?.retryAfterMillis ?: 0,
+                    30_000L shl it.retryAttempts.coerceAtMost(7)),
             ) else it
         }
         persistQueue(updated)
@@ -264,7 +277,16 @@ class OfflineFirstPhotoSyncRepository(
     }
 
     private suspend fun syncItem(item: OfflineQueueItem): Boolean {
-        if (!hasNetwork()) return false
+        if (!hasNetwork() || item.nextAttemptAt > System.currentTimeMillis() ||
+            appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("retry_at", 0) > System.currentTimeMillis()) return false
+        // A server-backed local record survives a crash between completion and queue removal.
+        if (delegate.observeFolder(item.folderId).first()?.photos.orEmpty().any {
+            it.serverFileId != null && it.status == PhotoSyncStatus.Synced &&
+                it.uploadSourceUri == item.stagedUri
+        }) {
+            removeQueueItem(item, deleteStagedFile = true)
+            return true
+        }
         val uploadUri = Uri.parse(item.stagedUri)
         val sourceUri = Uri.parse(item.sourceUri)
         val acceptedByDelegate = delegate.uploadStagedMedia(
@@ -279,6 +301,8 @@ class OfflineFirstPhotoSyncRepository(
             return false
         }
 
+        removeQueueItem(item, deleteStagedFile = true)
+
         // On success the delegate has a server-backed item. Remove only stale
         // unsynced local attempts for the same media; server originals are never
         // deleted by this cleanup.
@@ -290,7 +314,6 @@ class OfflineFirstPhotoSyncRepository(
             }
             .forEach { stale -> delegate.deletePhoto(item.folderId, stale.id) }
 
-        removeQueueItem(item, deleteStagedFile = true)
         item.shareBatchId?.let { batchId ->
             if (queue.value.none { it.shareBatchId == batchId }) {
                 ShareUploadNotifier.showComplete(appContext, batchId, item.shareBatchSize ?: 1)
@@ -417,6 +440,8 @@ class OfflineFirstPhotoSyncRepository(
                             failureNotified = item.optBoolean("failure_notified", false),
                             terminalFailure = item.optBoolean("terminal_failure", false),
                             errorCode = item.optString("error_code").takeIf { it.isNotBlank() },
+                            retryAttempts = item.optInt("retry_attempts", 0),
+                            nextAttemptAt = item.optLong("next_attempt_at", 0),
                         ),
                     )
                 }
@@ -440,7 +465,9 @@ class OfflineFirstPhotoSyncRepository(
                     .put("share_batch_size", item.shareBatchSize ?: JSONObject.NULL)
                     .put("failure_notified", item.failureNotified)
                     .put("terminal_failure", item.terminalFailure)
-                    .put("error_code", item.errorCode ?: JSONObject.NULL),
+                    .put("error_code", item.errorCode ?: JSONObject.NULL)
+                    .put("retry_attempts", item.retryAttempts)
+                    .put("next_attempt_at", item.nextAttemptAt),
             )
         }
         check(appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -462,6 +489,8 @@ class OfflineFirstPhotoSyncRepository(
         val failureNotified: Boolean = false,
         val terminalFailure: Boolean = false,
         val errorCode: String? = null,
+        val retryAttempts: Int = 0,
+        val nextAttemptAt: Long = 0,
     ) {
         val photoId: String get() = OFFLINE_ID_PREFIX + id
 
@@ -475,6 +504,7 @@ class OfflineFirstPhotoSyncRepository(
         )
 
         fun matches(photo: PhotoItem): Boolean =
+            photo.uploadSourceUri == stagedUri ||
             photo.localUri == sourceUri ||
                 photo.localUri == stagedUri
     }

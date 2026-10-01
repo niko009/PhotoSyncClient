@@ -11,6 +11,7 @@ import javax.crypto.spec.SecretKeySpec
 
 /** Installation credential, deliberately excluded from backup and device transfer. */
 class DeviceIdentity(context: Context) {
+    internal val registrationPreferences = context.getSharedPreferences("photosync_registration_v1", Context.MODE_PRIVATE)
     private val master: ByteArray = synchronized(lock) {
         val file = AtomicFile(File(context.noBackupFilesDir, "device-identity-v2"))
         if (file.baseFile.exists()) {
