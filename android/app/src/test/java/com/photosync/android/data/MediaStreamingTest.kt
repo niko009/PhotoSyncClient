@@ -77,7 +77,7 @@ class MediaStreamingTest {
         val context = RuntimeEnvironment.getApplication()
         val target = File(context.cacheDir, "stream-test.mp4")
         try {
-            val api = PhotoSyncApiClient("http://127.0.0.1:${server.localPort}", DeviceIdentity(context))
+            val api = PhotoSyncApiClient("http://127.0.0.1:${server.localPort}", DeviceIdentity(context), networkAccess = TestSyncNetworkAccess())
             val result = api.uploadFileToAlbum(1, "video.mp4", "video/mp4", length, expected.sha256,
                 "2026-09-07T00:00:00Z", { ZeroStream(length) })
             assertEquals(1, result.serverFileId)

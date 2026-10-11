@@ -1,6 +1,8 @@
 package com.photosync.android.data
 
 internal fun uploadFailureCode(error: Throwable): String = when (error) {
+    is SyncNetworkPausedException -> "NETWORK_POLICY_PAUSED"
+    is UploadProtocolException -> "UPLOAD_PROTOCOL_ERROR"
     is PhotoSyncApiException -> when {
         error.statusCode == 413 || error.code == "FILE_TOO_LARGE" -> "FILE_TOO_LARGE"
         error.statusCode == 401 || error.statusCode == 403 -> "UNAUTHORIZED"

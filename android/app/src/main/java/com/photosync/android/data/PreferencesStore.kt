@@ -24,6 +24,12 @@ class PreferencesStore(
     fun observeGlobalPhotoCleanupPolicy(): Flow<PhotoCleanupPolicy> = globalCleanupPolicyState.asStateFlow()
 
     fun getServerUrl(): String = serverUrlState.value
+    fun getSyncNetworkPolicy(): SyncNetworkPolicy =
+        if (preferences.getBoolean("allow_mobile_sync", false)) SyncNetworkPolicy.AnyNetwork else SyncNetworkPolicy.WifiOnly
+
+    fun updateSyncNetworkPolicy(policy: SyncNetworkPolicy) {
+        check(preferences.edit().putBoolean("allow_mobile_sync", policy == SyncNetworkPolicy.AnyNetwork).commit())
+    }
     fun getGlobalPhotoCleanupPolicy(): PhotoCleanupPolicy = globalCleanupPolicyState.value
 
     fun updateServerUrl(serverUrl: String) {

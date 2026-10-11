@@ -10,6 +10,11 @@ import com.photosync.android.domain.model.GoogleAccount
 import kotlinx.coroutines.flow.Flow
 
 interface PhotoSyncRepository {
+    fun observeMediaBatchProgress(folderId: String): Flow<com.photosync.android.domain.model.MediaBatchProgress> =
+        kotlinx.coroutines.flow.flowOf(com.photosync.android.domain.model.MediaBatchProgress(folderId))
+    fun observeMobileSyncEnabled(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    suspend fun updateMobileSyncEnabled(enabled: Boolean) {}
+    suspend fun enqueueMedia(folderId: String, uris: List<Uri>): Boolean = false
     fun observeServerUrl(): Flow<String>
     fun observeGlobalPhotoCleanupPolicy(): Flow<PhotoCleanupPolicy>
     fun observeFolderPhotoCleanupPolicy(folderId: String): Flow<PhotoCleanupPolicy?>
@@ -18,6 +23,7 @@ interface PhotoSyncRepository {
     fun observeGoogleAccount(): Flow<GoogleAccount?>
     fun observeDeviceIdentifiers(): Flow<DeviceIdentifiers>
     fun observeFolder(folderId: String): Flow<FolderDetail?>
+    suspend fun onSyncNetworkChanged() { refresh() }
     suspend fun refresh()
     suspend fun updateServerUrl(serverUrl: String)
     suspend fun updateGlobalPhotoCleanupPolicy(policy: PhotoCleanupPolicy)

@@ -39,6 +39,7 @@ data class FolderDetailUiState(
     val errorMessage: String? = null,
     val cleanupPolicy: PhotoCleanupPolicy? = null,
     val sharing: FolderSharingUiState = FolderSharingUiState(),
+    val batch: com.photosync.android.domain.model.MediaBatchProgress = com.photosync.android.domain.model.MediaBatchProgress(),
 ) {
     val isEmpty: Boolean
         get() = folder == null && errorMessage != null
@@ -55,18 +56,21 @@ class FolderDetailViewModel(
         repository.observeFolder(folderId),
         repository.observeFolderPhotoCleanupPolicy(folderId),
         sharing,
-    ) { folder, policy, sharingState ->
+        repository.observeMediaBatchProgress(folderId),
+    ) { folder, policy, sharingState, batch ->
         if (folder == null) {
             FolderDetailUiState(
                 errorMessage = "Folder not found.",
                 cleanupPolicy = policy,
                 sharing = sharingState,
+                batch = batch,
             )
         } else {
             FolderDetailUiState(
                 folder = folder,
                 cleanupPolicy = policy,
                 sharing = sharingState,
+                batch = batch,
             )
         }
     }.stateIn(
@@ -83,6 +87,10 @@ class FolderDetailViewModel(
                 .distinctUntilChanged()
                 .collect { identity -> loadSharing(identity) }
         }
+    }
+
+    fun enqueueMedia(uris: List<Uri>) {
+        viewModelScope.launch { repository.enqueueMedia(folderId, uris) }
     }
 
     fun upload(uri: Uri) {

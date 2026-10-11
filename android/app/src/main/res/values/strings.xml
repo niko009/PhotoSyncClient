@@ -95,4 +95,12 @@
     <string name="upload_error_server">Server error. We will retry automatically.</string>
     <string name="upload_error_local">Local file is missing or unreadable</string>
     <string name="upload_error_network">Temporary network failure. We will retry automatically.</string>
+    <string name="mobile_sync_title">Use mobile data for synchronization</string>
+    <string name="mobile_sync_help">When off, media waits for Wi-Fi with Internet. Enabling this can use substantial mobile data.</string>
+    <string name="batch_preparing">Preparing %1$d / %2$d</string>
+    <string name="batch_waiting_wifi">Waiting for Wi-Fi — %1$d files pending</string>
+    <string name="batch_syncing">Synchronizing %1$d / %2$d</string>
+    <string name="batch_failed">Failed — %1$d files. If preparation failed, select the batch again.</string>
+    <string name="batch_completed">Completed — %1$d files</string>
+    <string name="batch_pending">Waiting / Pending</string>
 </resources>

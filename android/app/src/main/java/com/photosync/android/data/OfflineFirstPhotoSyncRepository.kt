@@ -1,7 +1,12 @@
 package com.photosync.android.data
 
 import android.content.Context
-import android.net.ConnectivityManager
+import com.photosync.android.domain.model.MediaBatchProgress
+import com.photosync.android.domain.model.MediaBatchPhase
+import kotlinx.coroutines.asContextElement
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
@@ -39,17 +44,40 @@ import java.util.UUID
 class OfflineFirstPhotoSyncRepository(
     context: Context,
     private val delegate: PhotoSyncRepository,
-    private val networkAvailable: () -> Boolean = {
-        val manager = context.applicationContext.getSystemService(ConnectivityManager::class.java)
-        manager?.activeNetwork?.let { manager.getNetworkCapabilities(it) } != null
-    },
+    private val networkAvailable: () -> Boolean = { AndroidSyncNetworkAccess(context).isAllowed() },
 ) : PhotoSyncRepository by delegate {
     private val appContext = context.applicationContext
     private val queueMutex = Mutex()
     private val queue = MutableStateFlow(loadQueue())
+    private val batchProgress = MutableStateFlow(MediaBatchProgress())
+    private val syncPreferences = PreferencesStore(appContext)
+    private val mobileEnabled = MutableStateFlow(syncPreferences.getSyncNetworkPolicy() == SyncNetworkPolicy.AnyNetwork)
+
+    override fun observeMobileSyncEnabled(): Flow<Boolean> = mobileEnabled.asStateFlow()
+    override suspend fun updateMobileSyncEnabled(enabled: Boolean) {
+        withContext(Dispatchers.IO) {
+            syncPreferences.updateSyncNetworkPolicy(if (enabled) SyncNetworkPolicy.AnyNetwork else SyncNetworkPolicy.WifiOnly)
+        }
+        mobileEnabled.value = enabled
+        OfflineSyncScheduler.enqueue(appContext, replace = true)
+        if (hasNetwork()) refresh()
+    }
+
+    override fun observeMediaBatchProgress(folderId: String): Flow<MediaBatchProgress> = combine(
+        batchProgress, queue, mobileEnabled,
+    ) { progress, items, mobile ->
+        val pending = items.filter { it.folderId == folderId }
+        val active = if (progress.folderId == folderId) progress else MediaBatchProgress(folderId, total = pending.size)
+        active.copy(
+            failed = maxOf(active.failed, pending.count { it.terminalFailure }),
+            waitingForWifi = !mobile && pending.any { !it.terminalFailure } && !hasNetwork(),
+        )
+    }
 
     init {
+        recoverInterruptedPreparation()
         if (queue.value.isNotEmpty()) {
+            // Do not replace a worker that is constructing this application singleton.
             OfflineSyncScheduler.enqueue(appContext)
         }
     }
@@ -66,11 +94,16 @@ class OfflineFirstPhotoSyncRepository(
             if (queued.isEmpty()) {
                 folder
             } else {
+                val duplicates = delegate.observeFolder(folder.id).first()?.photos.orEmpty().filter { photo ->
+                    photo.serverFileId == null && queued.any { it.matches(photo) }
+                }
+                val duplicatePending = duplicates.count { it.status == PhotoSyncStatus.Pending || it.status == PhotoSyncStatus.Uploading }
+                val duplicateFailed = duplicates.count { it.status == PhotoSyncStatus.Failed }
                 folder.copy(
-                    photoCount = folder.photoCount + queued.size,
-                    pendingCount = folder.pendingCount + pendingCount,
-                    failedCount = folder.failedCount + failedCount,
-                    statusLabel = if (folder.failedCount + failedCount > 0) "Failed" else "Pending sync",
+                    photoCount = folder.photoCount - duplicates.size + queued.size,
+                    pendingCount = folder.pendingCount - duplicatePending + pendingCount,
+                    failedCount = folder.failedCount - duplicateFailed + failedCount,
+                    statusLabel = if (folder.failedCount - duplicateFailed + failedCount > 0) "Failed" else "Pending sync",
                 )
             }
         }
@@ -116,84 +149,104 @@ class OfflineFirstPhotoSyncRepository(
         OfflineSyncScheduler.enqueue(appContext)
     }
 
-    override suspend fun uploadToFolder(folderId: String, uri: Uri): Boolean = queueMutex.withLock {
+    override suspend fun uploadToFolder(folderId: String, uri: Uri): Boolean = enqueueMedia(folderId, listOf(uri))
+
+    override suspend fun enqueueMedia(folderId: String, uris: List<Uri>): Boolean = enqueueBatch(folderId, uris, false)
+
+    override suspend fun enqueueSharedMedia(folderId: String, uris: List<Uri>): Boolean = enqueueBatch(folderId, uris, true)
+
+    // Atomic preparation: older queued work waits on the same mutex. The staging
+    // journal is invisible to workers; one durable commit publishes the whole batch.
+    private suspend fun enqueueBatch(folderId: String, uris: List<Uri>, shared: Boolean): Boolean = queueMutex.withLock {
         val folder = delegate.observeFolder(folderId).first() ?: return@withLock false
-        if (!folder.canContribute) return@withLock false
-        val cleanupPolicy = effectiveCleanupPolicy(folderId)
-
-        val queuedItem = runCatching {
-            withContext(Dispatchers.IO) { createQueueItem(folderId, uri, cleanupPolicy) }
+        if (!folder.canContribute || uris.isEmpty()) return@withLock false
+        val uniqueUris = uris.distinct().filterNot { source ->
+            queue.value.any { it.folderId == folderId && it.sourceUri == source.toString() }
         }
-            .onFailure { if (it is CancellationException) throw it }
-            .onFailure { error -> Log.e(TAG, "Could not queue media for offline sync", error) }
-            .getOrNull() ?: return@withLock false
-
-        val nextQueue = queue.value + queuedItem
-        persistQueue(nextQueue)
-        queue.value = nextQueue
-        OfflineSyncScheduler.enqueue(appContext)
-
-        // Local acceptance is success. Network synchronization is deliberately
-        // best-effort so users can keep working without Internet.
-        if (hasNetwork()) {
-            runCatching { syncItem(queuedItem) }
-                .onFailure { if (it is CancellationException) throw it }
-                .onFailure { error -> handleItemFailure(queuedItem, error) }
+        if (uniqueUris.isEmpty()) return@withLock true
+        val policy = effectiveCleanupPolicy(folderId)
+        val batchId = UUID.randomUUID().toString()
+        val staged = mutableListOf<OfflineQueueItem>()
+        val directory = File(appContext.filesDir, "offline_queue/$folderId/$batchId")
+        batchProgress.value = MediaBatchProgress(folderId, MediaBatchPhase.Preparing, total = uniqueUris.size)
+        var committed = false
+        try {
+            withContext(Dispatchers.IO) {
+                check(appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .putString("preparing", JSONObject().put("folder", folderId).put("directory", directory.absolutePath)
+                        .put("total", uniqueUris.size).toString()).commit())
+                uniqueUris.forEachIndexed { index, uri ->
+                    currentCoroutineContext().ensureActive()
+                    staged += createQueueItem(folderId, uri, policy,
+                        shareBatchId = if (shared) batchId else null,
+                        shareBatchSize = if (shared) uniqueUris.size else null,
+                        stagingDirectory = directory)
+                    batchProgress.value = batchProgress.value.copy(prepared = index + 1)
+                }
+            }
+            // Do not allow cancellation between the disk commit and in-memory publication.
+            withContext(NonCancellable + Dispatchers.IO) {
+                val nextQueue = queue.value + staged
+                persistQueue(nextQueue)
+                queue.value = nextQueue
+                committed = true
+                OfflineSyncScheduler.enqueue(appContext)
+                appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("preparing").remove("preparation_failure").commit()
+            }
+            batchProgress.value = batchProgress.value.copy(phase = MediaBatchPhase.Pending)
+            if (shared) ShareUploadNotifier.showQueued(appContext, batchId, uniqueUris.size)
+        } catch (error: Exception) {
+            if (!committed) withContext(NonCancellable + Dispatchers.IO) {
+                directory.deleteRecursively()
+                batchProgress.value = batchProgress.value.copy(phase = MediaBatchPhase.Failed, failed = uniqueUris.size)
+                // Retain a small failure marker for process restart / user-visible atomic rollback.
+                appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .putString("preparation_failure", JSONObject().put("folder", folderId).put("total", uniqueUris.size).toString())
+                    .remove("preparing").commit()
+            }
+            if (error is CancellationException) throw error
+            Log.e(TAG, "Atomic batch preparation failed", error)
+            return@withLock committed
         }
+        // Share Activity remains alive for source-deletion confirmation on allowed networks.
+        // Normal picker also starts only AFTER the complete batch is durable.
+        syncQueueLocked()
         true
     }
 
-    override suspend fun enqueueSharedMedia(folderId: String, uris: List<Uri>): Boolean = queueMutex.withLock {
-        val uniqueUris = uris.distinct()
-        if (uniqueUris.isEmpty()) return@withLock false
-        val folder = delegate.observeFolder(folderId).first() ?: return@withLock false
-        if (!folder.canContribute) return@withLock false
-        val cleanupPolicy = effectiveCleanupPolicy(folderId)
-
-        val batchId = UUID.randomUUID().toString()
-        val staged = mutableListOf<OfflineQueueItem>()
-        val queuedItems = runCatching {
-            withContext(Dispatchers.IO) {
-                uniqueUris.map { uri ->
-                    createQueueItem(
-                        folderId = folderId,
-                        sourceUri = uri,
-                        cleanupPolicy = cleanupPolicy,
-                        shareBatchId = batchId,
-                        shareBatchSize = uniqueUris.size,
-                    ).also(staged::add)
-                }
+    private fun recoverInterruptedPreparation() {
+        val preferences = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val preparing = preferences.getString("preparing", null)?.let(::JSONObject)
+        if (preparing != null) {
+            val directory = File(preparing.getString("directory"))
+            val root = File(appContext.filesDir, "offline_queue").canonicalFile
+            if (directory.canonicalPath.startsWith(root.path + File.separator) &&
+                queue.value.none { Uri.parse(it.stagedUri).path?.startsWith(directory.path + File.separator) == true }) {
+                directory.deleteRecursively()
+                preferences.edit().putString("preparation_failure", preparing.toString()).commit()
             }
-        }.onFailure { error ->
-            staged.forEach(::deleteStagedFile)
-            if (error is CancellationException) throw error
-            Log.e(TAG, "Could not stage shared media", error)
-        }.getOrNull() ?: return@withLock false
-
-        val nextQueue = queue.value + queuedItems
-        persistQueue(nextQueue)
-        queue.value = nextQueue
-        ShareUploadNotifier.showQueued(appContext, batchId, uniqueUris.size)
-        OfflineSyncScheduler.enqueue(appContext)
-
-        // A share target is still an active Activity, so synchronise immediately
-        // when possible. This lets Android show its mandatory source-deletion
-        // confirmation before returning to the gallery.
-        if (hasNetwork()) {
-            queuedItems.forEach { item ->
-                runCatching { syncItem(item) }
-                    .onFailure { if (it is CancellationException) throw it }
-                    .onFailure { error -> handleItemFailure(item, error) }
-            }
+            preferences.edit().remove("preparing").commit()
         }
-        true
+        preferences.getString("preparation_failure", null)?.let { raw ->
+            val failure = JSONObject(raw)
+            batchProgress.value = MediaBatchProgress(failure.getString("folder"), MediaBatchPhase.Failed,
+                total = failure.getInt("total"), failed = failure.getInt("total"))
+        }
+    }
+
+    override suspend fun onSyncNetworkChanged() {
+        batchProgress.value = batchProgress.value.copy(waitingForWifi = !hasNetwork())
+        if (hasNetwork()) refresh()
     }
 
     override suspend fun refresh() {
         // Order matters: base refresh first creates any offline-created folder on
         // the server, then queued media can safely upload into that folder.
         delegate.refresh()
+        queueMutex.withLock { migrateLegacyItemsLocked() }
         if (hasNetwork()) syncQueuedUploadsOnce()
+        else if (batchProgress.value.phase != MediaBatchPhase.Failed && batchProgress.value.phase != MediaBatchPhase.Preparing)
+            batchProgress.value = batchProgress.value.copy(phase = MediaBatchPhase.Pending)
     }
 
     override suspend fun updateServerUrl(serverUrl: String) {
@@ -202,6 +255,7 @@ class OfflineFirstPhotoSyncRepository(
                 "Finish or remove pending uploads before changing the server."
             }
             delegate.updateServerUrl(serverUrl)
+            migrateLegacyItemsLocked()
         }
         if (hasNetwork()) syncQueuedUploadsOnce()
     }
@@ -217,6 +271,7 @@ class OfflineFirstPhotoSyncRepository(
                 "Finish or remove pending uploads before changing the account."
             }
             delegate.signInWithGoogle(idToken)
+            migrateLegacyItemsLocked()
         }
         if (hasNetwork()) syncQueuedUploadsOnce()
     }
@@ -230,27 +285,96 @@ class OfflineFirstPhotoSyncRepository(
         val queueId = photoId.removePrefix(OFFLINE_ID_PREFIX)
         val queuedItem = queue.value.firstOrNull { it.id == queueId && it.folderId == folderId }
         if (queuedItem != null) {
+            // Retire owned local attempts before dropping ownership, otherwise legacy
+            // adoption could resurrect a queue item the user explicitly removed.
+            delegate.observeFolder(folderId).first()?.photos.orEmpty()
+                .filter { it.serverFileId == null && queuedItem.matches(it) }
+                .forEach { delegate.deletePhoto(folderId, it.id) }
             removeQueueItem(queuedItem, deleteStagedFile = true)
         } else {
             delegate.deletePhoto(folderId, photoId)
         }
     }
 
-    suspend fun syncQueuedUploadsOnce() = queueMutex.withLock {
-        if (!hasNetwork()) return@withLock
+    suspend fun syncQueuedUploadsOnce() = queueMutex.withLock { syncQueueLocked() }
+
+    private fun hasPreparationFailure(): Boolean = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getString("preparation_failure", null)?.let { JSONObject(it).optString("folder") == batchProgress.value.folderId } == true
+
+    private suspend fun syncQueueLocked() {
+        if (queue.value.isEmpty()) return
+        if (!hasNetwork()) {
+            if (!hasPreparationFailure()) batchProgress.value = batchProgress.value.copy(phase = MediaBatchPhase.Pending)
+            return
+        }
         if (appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getLong("retry_at", 0) > System.currentTimeMillis()) return@withLock
+            .getLong("retry_at", 0) > System.currentTimeMillis()) return
         val snapshot = queue.value.filterNot { it.terminalFailure || it.nextAttemptAt > System.currentTimeMillis() }
         for (item in snapshot) {
-            runCatching { check(syncItem(item)) { "Server did not accept ${item.title}." } }
-                .onFailure { if (it is CancellationException) throw it }
-                .onFailure { error -> handleItemFailure(item, error) }
+            if (!hasNetwork()) break
+            val pending = queue.value.count { it.folderId == item.folderId }
+            val previous = batchProgress.value
+            batchProgress.value = if (previous.folderId == item.folderId && previous.total >= pending)
+                previous.copy(phase = MediaBatchPhase.Synchronizing)
+            else MediaBatchProgress(item.folderId, MediaBatchPhase.Synchronizing, total = pending, prepared = pending)
+            try {
+                check(syncItem(item)) { "Server did not accept media" }
+                batchProgress.value = batchProgress.value.copy(completed = batchProgress.value.completed + 1)
+            } catch (paused: SyncNetworkPausedException) {
+                break
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                handleItemFailure(item, error)
+            }
             if (appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getLong("retry_at", 0) > System.currentTimeMillis()) break
         }
+        val remaining = queue.value.filter { it.folderId == batchProgress.value.folderId }
+        batchProgress.value = batchProgress.value.copy(phase = when {
+            hasPreparationFailure() -> MediaBatchPhase.Failed
+            remaining.any { it.terminalFailure } -> MediaBatchPhase.Failed
+            remaining.isNotEmpty() -> MediaBatchPhase.Pending
+            batchProgress.value.total > 0 -> MediaBatchPhase.Completed
+            else -> MediaBatchPhase.Pending
+        })
+    }
+
+    // Legacy records are adopted, never sent by an independent retry engine.
+    // Keep is intentional: old records did not capture an enqueue-time cleanup policy.
+    private suspend fun migrateLegacyItemsLocked() {
+        var migrated = false
+        for (folder in delegate.observeFolders().first().filter { it.ownedByMe }) {
+            val photos = delegate.observeFolder(folder.id).first()?.photos.orEmpty()
+            for (photo in photos.filter { it.serverFileId == null && it.status in setOf(
+                PhotoSyncStatus.Pending, PhotoSyncStatus.Uploading, PhotoSyncStatus.Failed) }) {
+                if (queue.value.any { it.folderId == folder.id && it.matches(photo) }) continue
+                val source = photo.uploadSourceUri ?: photo.localUri ?: continue
+                val item = withContext(Dispatchers.IO) {
+                    runCatching { createQueueItem(folder.id, Uri.parse(source), PhotoCleanupPolicy.Keep,
+                        id = UUID.nameUUIDFromBytes("legacy:${folder.id}:${photo.id}".toByteArray()).toString())
+                        .copy(sourceUri = photo.localUri ?: source,
+                            terminalFailure = photo.failureCode in setOf("FILE_TOO_LARGE", "UNAUTHORIZED", "LOCAL_FILE_UNREADABLE"),
+                            errorCode = photo.failureCode)
+                    }.getOrElse {
+                        OfflineQueueItem(UUID.randomUUID().toString(), folder.id, photo.title,
+                            photo.mimeType ?: "application/octet-stream", PhotoCleanupPolicy.Keep, source, source,
+                            terminalFailure = true, errorCode = "LOCAL_FILE_UNREADABLE")
+                    }
+                }
+                withContext(NonCancellable + Dispatchers.IO) {
+                    val next = queue.value + item
+                    persistQueue(next)
+                    queue.value = next
+                }
+                migrated = true
+                delegate.deletePhoto(folder.id, photo.id)
+            }
+        }
+        if (migrated) OfflineSyncScheduler.enqueue(appContext)
     }
 
     private suspend fun handleItemFailure(item: OfflineQueueItem, error: Throwable) {
+        if (error is SyncNetworkPausedException) return
         Log.e(TAG, "Queued sync failed for ${item.title}", error)
         // Do not retry deterministic 4xx failures forever. 429/5xx and network
         // failures remain queued; WorkManager applies persistent exponential backoff.
@@ -263,7 +387,7 @@ class OfflineFirstPhotoSyncRepository(
         val updated = queue.value.map {
             if (it.id == item.id) it.copy(
                 terminalFailure = error is PhotoSyncApiException && !error.isTransient ||
-                    error is LocalFileUnreadableException || error is java.io.FileNotFoundException,
+                    error is LocalFileUnreadableException || error is java.io.FileNotFoundException || error is UploadProtocolException,
                 errorCode = code,
                 retryAttempts = it.retryAttempts + 1,
                 nextAttemptAt = System.currentTimeMillis() + maxOf(
@@ -277,7 +401,8 @@ class OfflineFirstPhotoSyncRepository(
     }
 
     private suspend fun syncItem(item: OfflineQueueItem): Boolean {
-        if (!hasNetwork() || item.nextAttemptAt > System.currentTimeMillis() ||
+        if (!hasNetwork()) throw SyncNetworkPausedException()
+        if (item.nextAttemptAt > System.currentTimeMillis() ||
             appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("retry_at", 0) > System.currentTimeMillis()) return false
         // A server-backed local record survives a crash between completion and queue removal.
         if (delegate.observeFolder(item.folderId).first()?.photos.orEmpty().any {
@@ -289,14 +414,14 @@ class OfflineFirstPhotoSyncRepository(
         }
         val uploadUri = Uri.parse(item.stagedUri)
         val sourceUri = Uri.parse(item.sourceUri)
-        val acceptedByDelegate = delegate.uploadStagedMedia(
+        val acceptedByDelegate = withContext(UploadTransferContext.current.asContextElement(UploadTransferContext(item.id, item.retryAttempts))) { delegate.uploadStagedMedia(
             folderId = item.folderId,
             uploadUri = uploadUri,
             sourceUri = sourceUri,
             displayName = item.title,
             mimeType = item.mimeType,
             cleanupPolicy = item.cleanupPolicy,
-        )
+        ) }
         if (!acceptedByDelegate) {
             return false
         }
@@ -328,13 +453,14 @@ class OfflineFirstPhotoSyncRepository(
         cleanupPolicy: PhotoCleanupPolicy,
         shareBatchId: String? = null,
         shareBatchSize: Int? = null,
+        stagingDirectory: File? = null,
+        id: String = UUID.randomUUID().toString(),
     ): OfflineQueueItem {
-        val id = UUID.randomUUID().toString()
         val title = resolveDisplayName(sourceUri) ?: "photo-${System.currentTimeMillis()}"
         val mimeType = appContext.contentResolver.getType(sourceUri)
             ?: guessMimeType(title)
             ?: "application/octet-stream"
-        val durableUri = makeDurableUri(folderId, id, title, sourceUri)
+        val durableUri = makeDurableUri(folderId, id, title, sourceUri, stagingDirectory)
         return OfflineQueueItem(
             id = id,
             folderId = folderId,
@@ -348,12 +474,12 @@ class OfflineFirstPhotoSyncRepository(
         )
     }
 
-    private fun makeDurableUri(folderId: String, id: String, title: String, sourceUri: Uri): Uri {
+    private fun makeDurableUri(folderId: String, id: String, title: String, sourceUri: Uri, stagingDirectory: File? = null): Uri {
         // Always stage content in app-private storage. Some Android providers
         // accept takePersistableUriPermission() for a temporary Picker URI and
         // revoke it after process death or an update.
 
-        val directory = File(appContext.filesDir, "offline_queue/$folderId")
+        val directory = stagingDirectory ?: File(appContext.filesDir, "offline_queue/$folderId")
         directory.mkdirs()
         val target = File(directory, "${id}_${safeFileName(title)}")
         try {
@@ -380,7 +506,11 @@ class OfflineFirstPhotoSyncRepository(
 
     private fun deleteStagedFile(item: OfflineQueueItem) {
         val uri = Uri.parse(item.stagedUri)
-        if (uri.scheme == "file") runCatching { uri.path?.let(::File)?.delete() }
+        if (uri.scheme == "file") runCatching {
+            val file = uri.path?.let(::File) ?: return@runCatching
+            val root = File(appContext.filesDir, "offline_queue").canonicalPath + File.separator
+            if (file.canonicalPath.startsWith(root)) file.delete()
+        }
     }
 
     private suspend fun notifyShareFailure(item: OfflineQueueItem) {

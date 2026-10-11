@@ -96,4 +96,12 @@
     <string name="upload_error_server">Eroare de server. Vom încerca din nou automat.</string>
     <string name="upload_error_local">Fișierul local lipsește sau nu poate fi citit</string>
     <string name="upload_error_network">Eroare temporară de rețea. Vom încerca din nou automat.</string>
+    <string name="mobile_sync_title">Folosește date mobile pentru sincronizare</string>
+    <string name="mobile_sync_help">Când opțiunea este dezactivată, fișierele așteaptă o conexiune Wi-Fi cu Internet. Activarea poate consuma mult trafic mobil.</string>
+    <string name="batch_preparing">Pregătire %1$d / %2$d</string>
+    <string name="batch_waiting_wifi">Se așteaptă Wi-Fi — %1$d fișiere în așteptare</string>
+    <string name="batch_syncing">Sincronizare %1$d / %2$d</string>
+    <string name="batch_failed">Eșec — %1$d fișiere. Dacă pregătirea a eșuat, selectează din nou lotul.</string>
+    <string name="batch_completed">Finalizat — %1$d fișiere</string>
+    <string name="batch_pending">În așteptare</string>
 </resources>

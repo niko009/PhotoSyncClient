@@ -179,6 +179,23 @@ fun FolderDetailScreen(
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val batch = state.batch
+                    if (batch.total > 0) {
+                        val message = when {
+                            batch.phase == com.photosync.android.domain.model.MediaBatchPhase.Preparing ->
+                                stringResource(R.string.batch_preparing, batch.prepared, batch.total)
+                            batch.waitingForWifi -> stringResource(R.string.batch_waiting_wifi,
+                                folder?.photos?.count { it.status == com.photosync.android.domain.model.PhotoSyncStatus.Pending } ?: 0)
+                            batch.phase == com.photosync.android.domain.model.MediaBatchPhase.Synchronizing ->
+                                stringResource(R.string.batch_syncing, batch.completed, batch.total)
+                            batch.phase == com.photosync.android.domain.model.MediaBatchPhase.Failed ->
+                                stringResource(R.string.batch_failed, batch.failed)
+                            batch.phase == com.photosync.android.domain.model.MediaBatchPhase.Completed ->
+                                stringResource(R.string.batch_completed, batch.completed)
+                            else -> stringResource(R.string.batch_pending)
+                        }
+                        Text(message, modifier = Modifier.testTag("batch_progress"))
+                    }
                     Text(
                         accessLabel,
                         style = MaterialTheme.typography.titleMedium,

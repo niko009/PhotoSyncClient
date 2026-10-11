@@ -60,9 +60,82 @@ class ResumableUploadProtocolTest {
         assertEquals(1, resumableChunkSize(maximum, maximum - 1))
     }
 
+    @Test fun handoverMidChunkPausesAndResumesFromConfirmedOffsetWithBoundedDiagnostics() {
+        val context = RuntimeEnvironment.getApplication()
+        val network = TestSyncNetworkAccess()
+        val diagnostics = DiagnosticLog(context)
+        val size = 10L * 1024 * 1024
+        var switched = false
+        TestUploadServer(size).use { server ->
+            val api = PhotoSyncApiClient("http://127.0.0.1:${server.port}", DeviceIdentity(context), diagnostics, network)
+            fun send(): Int = api.uploadFileToAlbum(1, "handover.mp4", "video/mp4", size, "a".repeat(64),
+                "2026-10-04T00:00:00Z", {
+                    object : java.io.FilterInputStream(ZeroStream(size)) {
+                        var consumed = 0L
+                        override fun skip(n: Long): Long = super.skip(n).also { consumed += it }
+                        override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                            val result = super.read(bytes, offset, length)
+                            consumed += maxOf(result, 0)
+                            if (!switched && consumed >= 5L * 1024 * 1024) {
+                                switched = true
+                                network.network = SyncNetworkState(NetworkTransport.Cellular, true, true)
+                            }
+                            return result
+                        }
+                    }
+                }).serverFileId
+            assertTrue(runCatching { send() }.exceptionOrNull() is SyncNetworkPausedException)
+            assertEquals(4L * 1024 * 1024, server.received)
+            assertEquals(1, server.starts) // Policy pauses never enter API retry/backoff.
+            network.network = SyncNetworkState(NetworkTransport.WiFi, true, false)
+            assertEquals(1, send())
+            assertEquals(size, server.received)
+            assertEquals(1, server.createdFiles)
+            assertEquals(1, server.requests.count { it.startsWith("PUT /api/files/uploads/id?offset=0") })
+            val log = java.io.File(context.filesDir, "diagnostics").listFiles()!!.joinToString { it.readText() }
+            assertTrue(log.contains("transport=WiFi metered=false"))
+            assertTrue(log.contains("failure=NETWORK_POLICY_PAUSED"))
+            assertTrue(log.contains("start=4194304"))
+            assertFalse(log.contains("Bearer"))
+        }
+        repeat(1500) { diagnostics.append("x".repeat(2048)) }
+        assertTrue(java.io.File(context.filesDir, "diagnostics").listFiles()!!.sumOf { it.length() } < 2 * 1024 * 1024)
+    }
+
+    @Test fun partialAcknowledgementStopsWithoutRetransmissionLoop() {
+        TestUploadServer(10L * 1024 * 1024, partialAck = true).use { server ->
+            assertTrue(runCatching { upload(server, 10L * 1024 * 1024) }.exceptionOrNull() is UploadProtocolException)
+            assertEquals(1, server.starts)
+            assertEquals(1, server.requests.count { it.startsWith("PUT ") })
+        }
+    }
+
+    @Test fun diagnosticsIdentifyCellularOptInQueueIdAndInternalRetryWithoutCredentials() {
+        val context = RuntimeEnvironment.getApplication()
+        val network = TestSyncNetworkAccess().apply {
+            policy = SyncNetworkPolicy.AnyNetwork
+            network = SyncNetworkState(NetworkTransport.Cellular, true, true)
+        }
+        val size = 10L * 1024 * 1024
+        UploadTransferContext.current.set(UploadTransferContext("stable-queue-id", 3))
+        try {
+            TestUploadServer(size, interruptSecondChunk = true).use { server ->
+                val api = PhotoSyncApiClient("http://127.0.0.1:${server.port}", DeviceIdentity(context), DiagnosticLog(context), network)
+                api.uploadFileToAlbum(1, "cellular.mp4", "video/mp4", size, "b".repeat(64),
+                    "2026-10-05T00:00:00Z", { ZeroStream(size) })
+            }
+        } finally { UploadTransferContext.current.remove() }
+        val log = java.io.File(context.filesDir, "diagnostics").listFiles()!!.joinToString { it.readText() }
+        assertTrue(log.contains("item=stable-queue-id filename=cellular.mp4"))
+        assertTrue(log.contains("retry=3:1 transport=Cellular metered=true"))
+        assertTrue(log.contains("attempted=4194304"))
+        assertFalse(log.contains("Authorization"))
+        assertFalse(log.contains("Bearer"))
+    }
+
     private fun upload(server: TestUploadServer, size: Long): Int {
         val identity = DeviceIdentity(RuntimeEnvironment.getApplication())
-        val api = PhotoSyncApiClient("http://127.0.0.1:${server.port}", identity)
+        val api = PhotoSyncApiClient("http://127.0.0.1:${server.port}", identity, networkAccess = TestSyncNetworkAccess())
         return api.uploadFileToAlbum(1, "media.mp4", "video/mp4", size, "0".repeat(64),
             "2026-09-25T00:00:00Z", { ZeroStream(size) }).serverFileId
     }
@@ -71,6 +144,7 @@ class ResumableUploadProtocolTest {
         private val size: Long,
         private val interruptSecondChunk: Boolean = false,
         private val loseCompletionResponse: Boolean = false,
+        private val partialAck: Boolean = false,
     ) : AutoCloseable {
         private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         val port: Int get() = server.localPort
@@ -123,12 +197,13 @@ class ResumableUploadProtocolTest {
                     val offset = path.substringAfter("offset=").toLong()
                     val bodySize = drain(input, length)
                     largestBody = maxOf(largestBody, bodySize)
+                    if (bodySize != length) return // A cancelled client leaves the server-confirmed offset intact.
                     if (interruptSecondChunk && !interrupted && offset == 4L * 1024 * 1024) {
                         interrupted = true
                         return
                     }
                     check(offset == received)
-                    received += bodySize
+                    received += if (partialAck) 1 else bodySize
                     respond(output, "{\"upload_id\":\"id\",\"received_bytes\":$received,\"size_bytes\":$size}")
                 }
                 path == "/api/files/uploads/id/complete" && method == "POST" -> {
@@ -151,6 +226,7 @@ class ResumableUploadProtocolTest {
             var count = 0L
             while (count < length) {
                 val read = input.read(buffer, 0, minOf(buffer.size.toLong(), length - count).toInt())
+                if (read < 0) break
                 check(read > 0)
                 count += read
             }

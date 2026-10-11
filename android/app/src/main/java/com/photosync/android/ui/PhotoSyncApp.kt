@@ -69,7 +69,7 @@ fun PhotoSyncApp(
         pendingDownload = null
     }
     val mediaPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(50),
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
     ) { uris: List<Uri> ->
         val viewModel = pendingFolderUploadViewModel
         if (viewModel != null) {
@@ -80,8 +80,8 @@ fun PhotoSyncApp(
                         Intent.FLAG_GRANT_READ_URI_PERMISSION,
                     )
                 }
-                viewModel.upload(uri)
             }
+            viewModel.enqueueMedia(uris)
         }
         pendingFolderUploadViewModel = null
     }
@@ -123,6 +123,7 @@ fun PhotoSyncApp(
                 onBack = navController::popBackStack,
                 onSaveServerUrl = viewModel::saveServerUrl,
                 onSaveGlobalPolicy = viewModel::saveGlobalPolicy,
+                onMobileSyncChanged = viewModel::saveMobileSyncEnabled,
                 onGoogleSignIn = {
                     scope.launch {
                         runCatching { GoogleCredentialClient(context).signIn() }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 
 data class SettingsUiState(
     val serverUrl: String = "",
+    val mobileSyncEnabled: Boolean = false,
     val globalPolicy: PhotoCleanupPolicy = PhotoCleanupPolicy.Keep,
     val stats: com.photosync.android.domain.model.DashboardStats = com.photosync.android.domain.model.DashboardStats(),
     val googleAccount: GoogleAccount? = null,
@@ -46,13 +47,19 @@ class SettingsViewModel(
             deviceIdentifiers = deviceIdentifiers,
         )
     }
-    val state: StateFlow<SettingsUiState> = combine(baseState, googleBusy, googleError, actionError) { base, busy, error, action ->
-        base.copy(googleBusy = busy, googleError = error, actionError = action)
+    val state: StateFlow<SettingsUiState> = combine(baseState, googleBusy, googleError, actionError, repository.observeMobileSyncEnabled()) { base, busy, error, action, mobile ->
+        base.copy(googleBusy = busy, googleError = error, actionError = action, mobileSyncEnabled = mobile)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = SettingsUiState(),
     )
+
+    fun saveMobileSyncEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { repository.updateMobileSyncEnabled(enabled) }.onFailure { actionError.value = it.message }
+        }
+    }
 
     fun saveServerUrl(serverUrl: String) {
         viewModelScope.launch {

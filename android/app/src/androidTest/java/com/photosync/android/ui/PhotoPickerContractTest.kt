@@ -14,7 +14,7 @@ class PhotoPickerContractTest {
     @Test
     fun addPhotosUsesGalleryPickerInsteadOfDocumentBrowser() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val contract = ActivityResultContracts.PickMultipleVisualMedia(50)
+        val contract = ActivityResultContracts.PickMultipleVisualMedia()
         val intent = contract.createIntent(
             context,
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
@@ -23,6 +23,7 @@ class PhotoPickerContractTest {
         assertNotEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             assertEquals(MediaStore.ACTION_PICK_IMAGES, intent.action)
+            assertEquals(MediaStore.getPickImagesMaxLimit(), intent.getIntExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, -1))
         }
     }
 }

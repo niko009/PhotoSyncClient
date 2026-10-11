@@ -34,10 +34,9 @@ class DefaultAppContainer(
             preferencesStore = preferencesStore,
             mediaCleanupManager = mediaCleanupManager,
         )
-        val legacyRetryRepository = RetryingPhotoSyncRepository(networkRepository)
         val offlineFirstRepository = OfflineFirstPhotoSyncRepository(
             context = context,
-            delegate = legacyRetryRepository,
+            delegate = networkRepository,
         )
         offlineFirstRepository
     }

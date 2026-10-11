@@ -97,4 +97,12 @@
     <string name="upload_error_server">Ошибка сервера. Повторим автоматически.</string>
     <string name="upload_error_local">Локальный файл отсутствует или не читается</string>
     <string name="upload_error_network">Временный сбой сети. Повторим автоматически.</string>
+    <string name="mobile_sync_title">Использовать мобильный интернет для синхронизации</string>
+    <string name="mobile_sync_help">Если выключено, файлы ждут Wi-Fi с интернетом. Включение может расходовать много мобильного трафика.</string>
+    <string name="batch_preparing">Подготовка %1$d / %2$d</string>
+    <string name="batch_waiting_wifi">Ожидание Wi-Fi — файлов в очереди: %1$d</string>
+    <string name="batch_syncing">Синхронизация %1$d / %2$d</string>
+    <string name="batch_failed">Ошибка — файлов: %1$d. При ошибке подготовки выберите пакет заново.</string>
+    <string name="batch_completed">Завершено — файлов: %1$d</string>
+    <string name="batch_pending">Ожидание синхронизации</string>
 </resources>

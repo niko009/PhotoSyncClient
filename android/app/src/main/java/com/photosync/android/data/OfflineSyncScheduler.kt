@@ -19,9 +19,13 @@ import java.util.concurrent.TimeUnit
 object OfflineSyncScheduler {
     private const val UNIQUE_WORK = "photosync-offline-sync"
 
-    fun enqueue(context: Context) {
+    fun requiredNetworkType(context: Context): NetworkType =
+        if (PreferencesStore(context).getSyncNetworkPolicy() == SyncNetworkPolicy.AnyNetwork)
+            NetworkType.CONNECTED else NetworkType.UNMETERED
+
+    fun enqueue(context: Context, replace: Boolean = false) {
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiredNetworkType(requiredNetworkType(context))
             .build()
         val request = OneTimeWorkRequestBuilder<OfflineSyncWorker>()
             .setConstraints(constraints)
@@ -33,7 +37,7 @@ object OfflineSyncScheduler {
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             UNIQUE_WORK,
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.APPEND_OR_REPLACE,
             request,
         )
     }
@@ -47,6 +51,7 @@ class OfflineSyncWorker(
         // WorkManager runs in the PhotoSync application process. Reuse the
         // application singleton repository so foreground and background sync
         // share one in-memory queue/mutex and cannot overwrite each other.
+        if (!AndroidSyncNetworkAccess(applicationContext).isAllowed()) return Result.retry()
         val app = applicationContext as PhotoSyncApplication
         val repository = app.container.photoSyncRepository
         return try {

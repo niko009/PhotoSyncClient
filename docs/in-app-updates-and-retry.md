@@ -16,19 +16,17 @@ Before `0.6.1-beta`, a folder or photo could remain in a local pending/failed st
 
 ### Photo recovery
 
-`RetryingPhotoSyncRepository` wraps the normal network repository. After a successful refresh it scans owned folders for local media in these states:
-
-- `Pending`
-- `Failed`
-- stale `Uploading`
-
-If the item still has a readable local URI, PhotoSync retries the upload. The server already deduplicates uploads by SHA-256 inside an album, so retrying an upload after an uncertain network response does not create a second server original.
-
-After a confirmed successful retry, PhotoSync removes only the stale local queue item. Normal app flows do not physically delete the committed server original.
+As of 0.7.9, `OfflineFirstPhotoSyncRepository` migrates legacy Pending, Failed
+and stale Uploading rows to the durable queue. The separate legacy retry wrapper
+has been removed, so one logical item has one owner and one durable backoff.
+Network policy defaults to Wi-Fi-only, including restored items. Server SHA-256
+deduplication protects uncertain completion. See [offline-first sync](offline-first-sync.md).
 
 ### Durable media permissions
 
-Direct media selection now uses Android `OpenMultipleDocuments` instead of `GetMultipleContents`. PhotoSync calls `takePersistableUriPermission()` for selected media when the provider allows it. This lets queued uploads retain access across app restarts and makes later retry possible.
+Selection uses Android Photo Picker with the platform-supported maximum. URI
+permissions are retained where supported, and the complete batch is staged in
+private storage before publishing the durable queue.
 
 Media received through Android Share continues to follow the existing share-import flow.
 

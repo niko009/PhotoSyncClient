@@ -9,10 +9,10 @@ Implemented in Android `0.5.0-beta`.
 3. Tap **Share** and choose **PhotoSync**.
 4. PhotoSync opens a compact folder chooser showing the number of shared items.
 5. Choose a writable PhotoSync folder and confirm the background upload.
-6. PhotoSync first copies the shared media into its durable local queue, closes the chooser, and returns to the gallery.
-7. WorkManager uploads the batch in the background and updates a system notification when it completes or needs to retry.
+6. PhotoSync prepares the complete shared batch and commits its durable queue. On an allowed network, it attempts sync while the chooser is still alive so Android can request source-deletion confirmation; otherwise it returns to Gallery with media pending.
+7. WorkManager resumes pending media under the shared Wi-Fi-only default (mobile data requires opt-in) and updates completion/retry notifications.
 
-The original media remains in the Android gallery. This flow does not move or delete the source files. Existing per-folder cleanup rules still apply after a successful upload because the normal `PhotoSyncRepository.uploadToFolder` pipeline is reused.
+Source originals are retained during staging and while waiting for Wi-Fi. Cleanup applies only after confirmed upload, using the folder/global policy captured at enqueue time. Android may require deletion confirmation.
 
 ## Android integration
 
@@ -39,7 +39,7 @@ After durable queueing or cancellation, the receiver activity finishes and Andro
 - durable queueing progress;
 - cancellation before queueing.
 
-`ShareImportViewModel` queues the batch through the existing offline-first repository. The persisted WorkManager queue performs the server upload; no new server endpoint is required.
+`ShareImportViewModel` queues the batch through the existing offline-first repository. Immediate sync and persistent WorkManager retry share the same committed queue and transport policy; no new server endpoint is required.
 
 ## Storage result
 

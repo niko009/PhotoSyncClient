@@ -6,7 +6,7 @@ PhotoSync is local-first: users must be able to create folders and add photos/vi
 
 1. Creating a folder always creates the local folder immediately.
 2. If the server is unavailable, the folder remains local/pending rather than failing or disappearing.
-3. Adding media first creates a durable local queue entry.
+3. Adding media stages the entire selected batch sequentially, then atomically publishes its durable queue entries.
 4. Queued media is shown as `Pending` and counts toward the folder's pending total.
 5. PhotoSync synchronizes in dependency order when connectivity returns:
    - register/refresh the device;
@@ -27,15 +27,15 @@ The temporary app-private queue copy is not the server original. Once an item is
 
 There are three recovery paths:
 
-- **Foreground/process alive:** `NetworkSyncObserver` listens for validated Internet connectivity and triggers repository refresh/sync.
+- **Foreground/process alive:** `NetworkSyncObserver` listens for default-network changes and triggers refresh/sync only when the shared media network policy permits it.
 - **App restart:** repository initialization refreshes server state and resumes pending work.
-- **App closed / process killed:** `OfflineSyncScheduler` uses Android WorkManager with a connected-network constraint. The work request survives process death and device reboot and retries when the server is still unavailable.
+- **App closed / process killed:** `OfflineSyncScheduler` uses Android WorkManager with an UNMETERED constraint by default (CONNECTED only after explicit mobile-data opt-in), plus the shared runtime transport check. The work request survives process death and device reboot and retries when the server is still unavailable.
 
-WorkManager is scheduled whenever a folder or media item is accepted locally while synchronization may still be pending.
+WorkManager is scheduled once per committed batch (or local folder), never per item during preparation. Changing the mobile setting replaces pending work with the new constraints.
 
 ## Compatibility with older builds
 
-`RetryingPhotoSyncRepository` remains as a compatibility layer for `Failed`, `Pending`, or stale `Uploading` records produced by older PhotoSync versions. It retries legacy records only after the server reports an online connection. New offline media uses `OfflineFirstPhotoSyncRepository` instead of intentionally creating `Failed` records.
+`RetryingPhotoSyncRepository` was removed in 0.7.9. The offline repository adopts legacy Pending/Failed/Uploading rows into its durable queue, matches source/staged URIs against existing ownership, and removes old local rows only after queue persistence. Missing sources become visible terminal failures. Legacy cleanup defaults to Keep because old rows did not capture the enqueue-time setting. Deterministic known terminal failure codes remain terminal.
 
 ## UX semantics
 
@@ -47,3 +47,48 @@ WorkManager is scheduled whenever a folder or media item is accepted locally whi
 ## 0.6.1-beta
 
 Offline-first folders/media, automatic connectivity-triggered synchronization, persistent WorkManager background retry, legacy upload recovery, and in-app updates are part of the 0.6.1-beta client changes. A release-signed APK still requires the same permanent signing certificate as 0.6.0-beta for an in-place Android update.
+
+## Batch transaction and network policy (0.7.9)
+
+`enqueueMedia(folderId, uris)` and `enqueueSharedMedia` share an atomic batch
+preparer. Duplicate source URIs already queued for that folder are omitted. A
+preparation journal identifies one private staging directory; source bytes are
+streamed one file at a time on Dispatchers.IO, with fsync. The repository mutex
+holds older sync work behind preparation as well. The staging journal is not a
+worker queue: only the final single SharedPreferences commit publishes the batch.
+A non-cancellable commit/publication/scheduling section closes the cancellation
+window. No SHA pass is added to preparation; the existing protocol fingerprints
+the staged file before upload.
+
+Any preparation failure rejects the whole new batch, preserves older queued work,
+removes uncommitted copies and reports Failed. Users must reselect that batch.
+Restart detects an unfinished journal and rolls it back with a persisted failure
+marker; a journal left after a successful commit never deletes committed copies.
+Cancellation follows the same atomic rollback rules. Committed files and queue
+records survive reboot/process death. Picker maximum now comes from AndroidX /
+the platform rather than a hardcoded 50.
+
+`AndroidSyncNetworkAccess` is the single evaluator. Missing preference means
+WifiOnly on fresh installation and upgrade. WifiOnly requires validated Internet,
+Wi-Fi transport and no cellular/VPN ambiguity. AnyNetwork requires explicit
+mobile-data opt-in and permits other validated transports too. No network policy
+blocks local staging. The UI distinguishes preparation, waiting (including
+Waiting for Wi-Fi), synchronization, failure and completion. Strings are available
+in English, Russian and Romanian.
+
+WorkManager UNMETERED is a conservative approximation, not proof of Wi-Fi. Every
+worker and every media transfer rechecks transport. Unmetered cellular still
+cannot upload by default. Foreground / a live connectivity observer accepts
+validated metered Wi-Fi, but a closed app's default worker waits for unmetered
+Wi-Fi. VPN/ambiguous default transport is blocked in WifiOnly; explicit AnyNetwork
+permits it. These deliberate restrictions prefer avoiding cellular charges.
+
+Every payload connection uses Android Network.openConnection, pinning it to the
+approved Network. Checks before chunks and each 64 KiB write pause on policy or
+network change. The socket cannot migrate to a new cellular default. A policy
+pause stays Pending, without failure count or retry penalty. A later attempt
+reopens the resumable session and trusts only server-confirmed offsets. The
+server's all-or-nothing chunk protocol now requires an exact chunk-end ACK;
+invalid/partial ACKs become terminal protocol errors, not transfer loops.
+
+See [release audit and validation](release-0.7.9.md).

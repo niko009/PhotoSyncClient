@@ -433,7 +433,8 @@ class NetworkPhotoSyncRepository(
                 attemptedPhotoId = tempPhotoId
 
                 val thumbnailPath = ensureThumbnail(folderId, tempPhotoId, uploadUri)
-                updateLocalPhoto(folderId, PhotoItem(tempPhotoId, originalName, PhotoSyncStatus.Uploading, sourceUri.toString(), thumbnailPath))
+                updateLocalPhoto(folderId, PhotoItem(tempPhotoId, originalName, PhotoSyncStatus.Uploading, sourceUri.toString(), thumbnailPath,
+                    uploadSourceUri = uploadUri.toString()))
                 restoreLocalState()
 
                 ensureCurrentDeviceRegistration()
@@ -497,8 +498,8 @@ class NetworkPhotoSyncRepository(
                 attemptedPhotoId?.let { id ->
                     localPhotos.value[folderId]?.firstOrNull { it.id == id }?.let {
                         updateLocalPhoto(folderId, it.copy(
-                            status = PhotoSyncStatus.Failed,
-                            failureCode = uploadFailureCode(error),
+                            status = if (error is SyncNetworkPausedException) PhotoSyncStatus.Pending else PhotoSyncStatus.Failed,
+                            failureCode = if (error is SyncNetworkPausedException) null else uploadFailureCode(error),
                         ))
                     }
                 }

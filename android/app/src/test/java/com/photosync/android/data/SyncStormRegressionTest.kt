@@ -64,9 +64,9 @@ class SyncStormRegressionTest {
     @Test fun concurrentAndRestartedRegistrationIsSingleAndMetadataChangesRegisterOnce() = runBlocking {
         CounterServer().use { server ->
             val identity = DeviceIdentity(context)
-            val clients = (1..12).map { PhotoSyncApiClient(server.url, identity) }
+            val clients = (1..12).map { PhotoSyncApiClient(server.url, identity, networkAccess = TestSyncNetworkAccess()) }
             clients.map { client -> async(Dispatchers.IO) { client.registerDevice(client.deviceUuid(), "phone", "1") } }.forEach { it.await() }
-            PhotoSyncApiClient(server.url, DeviceIdentity(context)).let { it.registerDevice(it.deviceUuid(), "phone", "1") }
+            PhotoSyncApiClient(server.url, DeviceIdentity(context), networkAccess = TestSyncNetworkAccess()).let { it.registerDevice(it.deviceUuid(), "phone", "1") }
             assertEquals(1, server.count("/api/devices/register"))
             clients.first().let { it.registerDevice(it.deviceUuid(), "phone", "2") }
             assertEquals(2, server.count("/api/devices/register"))
@@ -77,7 +77,7 @@ class SyncStormRegressionTest {
         CounterServer().use { server ->
             server.registration429 = true
             repeat(12) {
-                val client = PhotoSyncApiClient(server.url, DeviceIdentity(context))
+                val client = PhotoSyncApiClient(server.url, DeviceIdentity(context), networkAccess = TestSyncNetworkAccess())
                 val error = runCatching { client.registerDevice(client.deviceUuid(), "phone", "1") }.exceptionOrNull()
                 assertTrue(error is PhotoSyncApiException)
                 assertTrue((error as PhotoSyncApiException).retryAfterMillis!! > 110_000)
@@ -126,7 +126,7 @@ class SyncStormRegressionTest {
 
     @Test fun newServerOriginNeedsItsOwnRegistration() {
         CounterServer().use { first -> CounterServer().use { second ->
-            val client = PhotoSyncApiClient(first.url, DeviceIdentity(context))
+            val client = PhotoSyncApiClient(first.url, DeviceIdentity(context), networkAccess = TestSyncNetworkAccess())
             client.registerDevice(client.deviceUuid(), "phone", "1")
             val firstUuid = client.deviceUuid()
             client.updateBaseUrl(second.url)
@@ -156,7 +156,7 @@ class SyncStormRegressionTest {
 
     private fun queueJson() = context.getSharedPreferences("photosync_offline_queue_v1", 0).getString("items", "").orEmpty()
     private fun repository(server: CounterServer) = NetworkPhotoSyncRepository(context,
-        PhotoSyncApiClient(server.url, DeviceIdentity(context)), PreferencesStore(context))
+        PhotoSyncApiClient(server.url, DeviceIdentity(context), networkAccess = TestSyncNetworkAccess()), PreferencesStore(context))
 
     private class CounterServer : AutoCloseable {
         private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))

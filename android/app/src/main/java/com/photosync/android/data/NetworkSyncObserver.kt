@@ -4,12 +4,12 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.util.Log
 import com.photosync.android.domain.repository.PhotoSyncRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -25,40 +25,40 @@ class NetworkSyncObserver(
     private val appContext = context.applicationContext
     private val connectivityManager = appContext.getSystemService(ConnectivityManager::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    @Volatile private var refreshJob: Job? = null
+    private val changes = Channel<Unit>(Channel.CONFLATED)
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = scheduleRefresh()
+        override fun onLost(network: Network) = scheduleRefresh()
 
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            ) {
-                scheduleRefresh()
-            }
+            scheduleRefresh()
         }
     }
 
     fun start() {
+        scope.launch {
+            for (change in changes) {
+                delay(750)
+                runCatching { repository.onSyncNetworkChanged() }
+                    .onFailure { error -> Log.e(TAG, "Connectivity-triggered sync failed", error) }
+            }
+        }
         runCatching {
-            val request = NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .build()
-            connectivityManager.registerNetworkCallback(request, callback)
+            connectivityManager.registerDefaultNetworkCallback(callback)
             scheduleRefresh()
         }.onFailure { error ->
             Log.e(TAG, "Could not register connectivity observer", error)
         }
     }
 
-    private fun scheduleRefresh() {
-        refreshJob?.cancel()
-        refreshJob = scope.launch {
-            delay(750)
-            runCatching { repository.refresh() }
-                .onFailure { error -> Log.e(TAG, "Connectivity-triggered sync failed", error) }
-        }
+    fun stop() {
+        connectivityManager.unregisterNetworkCallback(callback)
+        changes.close()
+        scope.cancel()
     }
+
+    private fun scheduleRefresh() { changes.trySend(Unit) }
 
     companion object {
         private const val TAG = "PhotoSyncNetwork"

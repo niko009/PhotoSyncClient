@@ -22,7 +22,7 @@ import com.photosync.android.ui.components.*
 @Composable
 fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: (String) -> Unit,
     onSaveGlobalPolicy: (PhotoCleanupPolicy) -> Unit, onGoogleSignIn: () -> Unit,
-    onGoogleSignOut: () -> Unit, onOpenFamily: () -> Unit, modifier: Modifier = Modifier) {
+    onGoogleSignOut: () -> Unit, onOpenFamily: () -> Unit, onMobileSyncChanged: (Boolean) -> Unit = {}, modifier: Modifier = Modifier) {
     var serverDraft by rememberSaveable(state.serverUrl) { mutableStateOf(state.serverUrl) }
     var policyDraft by remember(state.globalPolicy) { mutableStateOf(state.globalPolicy) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -36,6 +36,14 @@ fun SettingsScreen(state: SettingsUiState, onBack: () -> Unit, onSaveServerUrl: 
             item {
                 Text(stringResource(R.string.album_settings_title), style = MaterialTheme.typography.headlineLarge)
                 state.actionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+            item {
+                AlbumPanel {
+                    Text(stringResource(R.string.mobile_sync_title), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.mobile_sync_help))
+                    Switch(checked = state.mobileSyncEnabled, onCheckedChange = onMobileSyncChanged,
+                        modifier = Modifier.testTag("mobile_sync"))
+                }
             }
             item {
                 AlbumPanel {

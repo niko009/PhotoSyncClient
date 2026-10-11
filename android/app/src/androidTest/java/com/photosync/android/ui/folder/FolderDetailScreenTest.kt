@@ -1,5 +1,12 @@
 package com.photosync.android.ui.folder
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.test.platform.app.InstrumentationRegistry
+import com.photosync.android.R
+import com.photosync.android.domain.model.MediaBatchProgress
+import com.photosync.android.domain.model.MediaBatchPhase
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -16,6 +23,27 @@ class FolderDetailScreenTest {
 
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test fun preparationWaitingSyncFailureAndCompletionHaveDistinctLabels() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val batch = mutableStateOf(MediaBatchProgress("folder-1", MediaBatchPhase.Preparing, prepared = 37, total = 500))
+        composeRule.setContent {
+            PhotoSyncTheme {
+                FolderDetailScreen(FolderDetailUiState(
+                    folder = FolderDetail("folder-1", "Camera", listOf(PhotoItem("1", "photo", PhotoSyncStatus.Pending))),
+                    batch = batch.value), {}, {}, {}, {}, {})
+            }
+        }
+        composeRule.onNodeWithTag("batch_progress").assertTextEquals(context.getString(R.string.batch_preparing, 37, 500))
+        composeRule.runOnIdle { batch.value = batch.value.copy(phase = MediaBatchPhase.Pending, waitingForWifi = true) }
+        composeRule.onNodeWithTag("batch_progress").assertTextEquals(context.getString(R.string.batch_waiting_wifi, 1))
+        composeRule.runOnIdle { batch.value = batch.value.copy(phase = MediaBatchPhase.Synchronizing, waitingForWifi = false, completed = 42) }
+        composeRule.onNodeWithTag("batch_progress").assertTextEquals(context.getString(R.string.batch_syncing, 42, 500))
+        composeRule.runOnIdle { batch.value = batch.value.copy(phase = MediaBatchPhase.Failed, failed = 1) }
+        composeRule.onNodeWithTag("batch_progress").assertTextEquals(context.getString(R.string.batch_failed, 1))
+        composeRule.runOnIdle { batch.value = batch.value.copy(phase = MediaBatchPhase.Completed, completed = 500) }
+        composeRule.onNodeWithTag("batch_progress").assertTextEquals(context.getString(R.string.batch_completed, 500))
+    }
 
     @Test
     fun rendersSquareGridStatuses() {

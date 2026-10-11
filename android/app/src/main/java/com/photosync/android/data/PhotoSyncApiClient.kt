@@ -32,12 +32,15 @@ class PhotoSyncApiException(
         code == "UPLOAD_INTERRUPTED" || code == "UPLOAD_OFFSET_MISMATCH"
 }
 
+class UploadProtocolException : IllegalStateException("Server returned an invalid upload offset")
+
 class LocalFileUnreadableException(cause: Throwable) : IOException("Local file is missing or unreadable", cause)
 
 class PhotoSyncApiClient(
     private var baseUrl: String = DEFAULT_BASE_URL,
     private val identity: DeviceIdentity,
     private val diagnostics: DiagnosticLog? = null,
+    private val networkAccess: SyncNetworkAccess = identity.syncNetworkAccess,
 ) {
 
     fun deviceUuid(): String = identity.credentials(effectiveBaseUrl()).first
@@ -273,9 +276,10 @@ class PhotoSyncApiClient(
         while (true) {
             try {
                 return uploadFileAttempt(albumId, deviceUuid, albumName, originalName,
-                    mimeType, sizeBytes, sha256, createdAtIso, openFile)
+                    mimeType, sizeBytes, sha256, createdAtIso, openFile, retry)
             } catch (error: Exception) {
                 val transient = when (error) {
+                    is SyncNetworkPausedException -> false
                     is PhotoSyncApiException -> error.isTransient
                     is LocalFileUnreadableException -> false
                     is FileNotFoundException -> false
@@ -303,10 +307,19 @@ class PhotoSyncApiClient(
         sha256: String,
         createdAtIso: String,
         openFile: () -> InputStream,
+        retry: Int,
     ): FileUploadResultDto {
         // The server keys an unfinished session by device/album/SHA-256. Calling
         // start again after a process or network restart is therefore safe and
         // returns the durable offset instead of starting the media from zero.
+        val lease = networkAccess.acquire()
+        val trace = UploadTransferContext.current.get()
+        val itemId = trace?.itemId ?: sha256
+        val retryNumber = (trace?.retry ?: 0).toString() + ":" + retry
+        val safeName = originalName.replace(Regex("[\\r\\n\\t]"), " ").take(180)
+        fun log(session: String, startOffset: Long, attempted: Long, confirmed: Long, failure: String = "NONE") {
+            diagnostics?.append("upload item=$itemId filename=$safeName size=$sizeBytes session=$session start=$startOffset attempted=$attempted confirmed=$confirmed retry=$retryNumber transport=${lease.state.transport} metered=${lease.state.metered} failure=$failure")
+        }
         val start = JSONObject()
             .put("original_name", originalName)
             .put("mime_type", mimeType)
@@ -316,35 +329,59 @@ class PhotoSyncApiClient(
             .put("is_video", mimeType.startsWith("video/"))
         if (albumId != null) start.put("album_id", albumId)
         else start.put("device_uuid", requireNotNull(deviceUuid)).put("album_name", requireNotNull(albumName))
+        lease.checkAllowed()
         var status = postJson("/api/files/uploads", start)
-        status.optJSONObject("completed_file")?.let { return it.toUploadResult() }
+        status.optJSONObject("completed_file")?.let { log("completed", sizeBytes, 0, sizeBytes); return it.toUploadResult() }
         val uploadId = status.getString("upload_id")
         var offset = status.getLong("received_bytes")
-        require(offset in 0..sizeBytes) { "Server returned an invalid upload offset" }
+        if (offset !in 0..sizeBytes) throw UploadProtocolException()
 
+        log(uploadId, offset, 0, offset)
         while (offset < sizeBytes) {
+            lease.checkAllowed()
             val chunkSize = resumableChunkSize(sizeBytes, offset)
-            val connection = openConnection("/api/files/uploads/$uploadId?offset=$offset", "PUT")
+            val connection = openConnection("/api/files/uploads/$uploadId?offset=$offset", "PUT", lease)
             connection.doOutput = true
             connection.connectTimeout = 30_000
             connection.readTimeout = 120_000
             connection.setRequestProperty("Content-Type", "application/octet-stream")
             connection.setFixedLengthStreamingMode(chunkSize)
+            var attempted = 0L
+            val startingOffset = offset
             try {
                 connection.outputStream.use { output ->
                     openFile().use { input ->
                         input.skipFully(offset)
-                        input.copyExactlyTo(output, chunkSize)
+                        val buffer = ByteArray(64 * 1024)
+                        var remaining = chunkSize
+                        while (remaining > 0) {
+                            lease.checkAllowed()
+                            val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+                            check(count > 0) { "Upload source ended during chunk" }
+                            // Count attempted writes even if the peer drops the response.
+                            lease.checkAllowed()
+                            attempted += count
+                            output.write(buffer, 0, count)
+                            remaining -= count
+                        }
                     }
                 }
                 status = execute(connection)
                 val received = status.getLong("received_bytes")
-                require(received in (offset + 1)..minOf(sizeBytes, offset + chunkSize)) {
-                    "Server returned an invalid upload offset"
-                }
+                // The server atomically commits a whole fixed-length chunk. A partial
+                // ACK must not turn into repeatedly sending 4 MiB for a few bytes of progress.
+                if (received != offset + chunkSize) throw UploadProtocolException()
                 offset = received
+                log(uploadId, startingOffset, attempted, received)
+            } catch (error: Exception) {
+                log(uploadId, startingOffset, attempted, startingOffset,
+                    if (!networkAccess.isAllowed() || error is SyncNetworkPausedException) "NETWORK_POLICY_PAUSED"
+                    else uploadFailureCode(error))
+                if (!networkAccess.isAllowed()) throw SyncNetworkPausedException()
+                throw error
             } finally { connection.disconnect() }
         }
+        lease.checkAllowed()
         return postJson("/api/files/uploads/$uploadId/complete", JSONObject()).toUploadResult()
     }
 
@@ -389,9 +426,10 @@ class PhotoSyncApiClient(
         return execute(connection)
     }
 
-    private fun openConnection(path: String, method: String): HttpURLConnection {
+    private fun openConnection(path: String, method: String, lease: MediaNetworkLease? = null): HttpURLConnection {
         val origin = effectiveBaseUrl()
-        val connection = URL(origin + path).openConnection() as HttpURLConnection
+        val connection = lease?.openConnection(URL(origin + path))
+            ?: (URL(origin + path).openConnection() as HttpURLConnection)
         connection.requestMethod = method
         connection.instanceFollowRedirects = false
         connection.connectTimeout = 5_000
@@ -430,7 +468,7 @@ class PhotoSyncApiClient(
 
             if (body.isBlank()) JSONObject() else JSONObject(body)
         } catch (error: Exception) {
-            diagnostics?.append("${connection.requestMethod} ${connection.url.path} failed: ${error.javaClass.simpleName}: ${error.message}")
+            diagnostics?.append("${connection.requestMethod} ${connection.url.path} failed: ${error.javaClass.simpleName}")
             throw error
         } finally {
             connection.disconnect()
@@ -448,7 +486,7 @@ class PhotoSyncApiClient(
             }
             bytes
         } catch (error: Exception) {
-            diagnostics?.append("${connection.requestMethod} ${connection.url.path} failed: ${error.javaClass.simpleName}: ${error.message}")
+            diagnostics?.append("${connection.requestMethod} ${connection.url.path} failed: ${error.javaClass.simpleName}")
             throw error
         } finally {
             connection.disconnect()
