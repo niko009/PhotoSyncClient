@@ -101,6 +101,7 @@ public sealed class ResumableUploadService(PhotoSyncDbContext db, StoragePathRes
         if (session.StoredFileId is int storedId)
             return (await db.Files.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == storedId, ct), null);
         await guard.Gate.WaitAsync(ct);
+        var gateHeld = true;
         try
         {
             await db.Entry(session).ReloadAsync(ct);
@@ -111,11 +112,25 @@ public sealed class ResumableUploadService(PhotoSyncDbContext db, StoragePathRes
             var device = await db.Devices.IgnoreQueryFilters().SingleAsync(x => x.Id == session.DeviceId, ct);
             var album = await db.Albums.IgnoreQueryFilters().SingleAsync(x => x.Id == session.AlbumId, ct);
             await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
-            // StoreAsync also serializes writes. The gate is intentionally released before it runs.
+            // StoreAsync acquires the same gate, so release it temporarily. Reacquire
+            // with a non-cancelled token before leaving this scope; otherwise a cancelled
+            // request can skip reacquisition and the outer finally would over-release
+            // SemaphoreSlim, causing SemaphoreFullException.
             guard.Gate.Release();
+            gateHeld = false;
             StoreFileResult result;
-            try { result = await storage.StoreAsync(new StoreFileCommand(device, album, session.OriginalName, session.MimeType, session.SizeBytes, session.Sha256, session.CreatedAtUtc, null, null, null, session.IsVideo, input), ct); }
-            finally { await guard.Gate.WaitAsync(ct); }
+            try
+            {
+                result = await storage.StoreAsync(
+                    new StoreFileCommand(device, album, session.OriginalName, session.MimeType, session.SizeBytes,
+                        session.Sha256, session.CreatedAtUtc, null, null, null, session.IsVideo, input),
+                    ct);
+            }
+            finally
+            {
+                await guard.Gate.WaitAsync(CancellationToken.None);
+                gateHeld = true;
+            }
             if (result.IsValidationError) return (null, result.IsFileTooLarge ? "FILE_TOO_LARGE" : "UPLOAD_VERIFICATION_FAILED");
             if (result.IsForbidden) return (null, "UPLOAD_FORBIDDEN");
             session.StoredFileId = result.File!.Id; session.UpdatedAtUtc = DateTimeOffset.UtcNow;
@@ -123,6 +138,9 @@ public sealed class ResumableUploadService(PhotoSyncDbContext db, StoragePathRes
             File.Delete(path);
             return (result.File, null);
         }
-        finally { guard.Gate.Release(); }
+        finally
+        {
+            if (gateHeld) guard.Gate.Release();
+        }
     }
 }
